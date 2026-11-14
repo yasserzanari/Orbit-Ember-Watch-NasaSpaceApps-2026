@@ -59,6 +59,8 @@ const firmsSources = [
 
 type FirmsCoverage = { product: string; minDate: string; maxDate: string }
 type FirmsCoverageState = { status: 'idle' | 'loading' | 'ready' | 'error' | 'key-missing'; products: FirmsCoverage[]; fetchedAtUtc: string | null; message: string }
+type FirmsArchive = { importId: string; product: string; sourceFile: string; sourceRetrievedAtUtc: string | null; minDateUtc: string; maxDateUtc: string; rowsRead: number; rowsAccepted: number; rowsRejected: number; rowsDuplicate: number; sourceSha256: string; qaStatus: string; warnings: string[] }
+type FirmsArchiveState = { status: 'idle' | 'loading' | 'ready' | 'error'; archives: FirmsArchive[]; invalidManifestCount: number; truncated: boolean; message: string }
 
 function useFirmsCoverage(enabled: boolean) {
   const [coverage, setCoverage] = useState<FirmsCoverageState>({ status: 'idle', products: [], fetchedAtUtc: null, message: '' })
@@ -88,6 +90,33 @@ function useFirmsCoverage(enabled: boolean) {
   }, [coverage.status, enabled, load])
   useEffect(() => () => controllerRef.current?.abort(), [])
   return { ...coverage, load }
+}
+
+function useFirmsArchiveCatalog(enabled: boolean) {
+  const [catalog, setCatalog] = useState<FirmsArchiveState>({ status: 'idle', archives: [], invalidManifestCount: 0, truncated: false, message: '' })
+  const controllerRef = useRef<AbortController | null>(null)
+  const load = useCallback(async () => {
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    controllerRef.current = controller
+    setCatalog((current) => ({ ...current, status: 'loading', message: '' }))
+    try {
+      const response = await fetch('/api/firms/archive-catalog', { signal: controller.signal })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.message || 'The local archive catalog could not be loaded.')
+      setCatalog({ status: 'ready', archives: Array.isArray(payload.archives) ? payload.archives : [], invalidManifestCount: Number(payload.invalidManifestCount) || 0, truncated: Boolean(payload.truncated), message: '' })
+    } catch (error) {
+      if (controller.signal.aborted) return
+      setCatalog((current) => ({ ...current, status: 'error', message: error instanceof Error ? error.message : 'The local archive catalog could not be loaded.' }))
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null
+    }
+  }, [])
+  useEffect(() => {
+    if (enabled && catalog.status === 'idle') void load()
+  }, [catalog.status, enabled, load])
+  useEffect(() => () => controllerRef.current?.abort(), [])
+  return { ...catalog, load }
 }
 
 function useFirms(lat: number, lon: number, source: string, days: number, selectedEndDate: string | null = null) {
@@ -385,7 +414,7 @@ function createWindSpeedImage(vectors: WindVector[]) {
       image.data[offset] = red; image.data[offset + 1] = green; image.data[offset + 2] = blue
       const edge = Math.min(1, x / 12, y / 12, (size - 1 - x) / 12, (size - 1 - y) / 12)
       const feather = edge * edge * (3 - 2 * edge)
-      image.data[offset + 3] = Math.round(220 * Math.min(1, 0.54 + vector.speedKmh / 200) * feather)
+      image.data[offset + 3] = Math.round(190 * Math.min(1, 0.48 + vector.speedKmh / 200) * feather)
     }
   }
   context.putImageData(image, 0, 0)
@@ -407,7 +436,7 @@ function ensureWindSpeedLayer(instance: MapLibreMap, vectors: WindVector[]) {
     instance.addSource('wind-speed-raster', { type: 'image', ...image })
     instance.addLayer({
       id: 'wind-speed-raster', type: 'raster', source: 'wind-speed-raster',
-      paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 180, 'raster-resampling': 'linear' },
+      paint: { 'raster-opacity': 0.82, 'raster-fade-duration': 180, 'raster-resampling': 'linear' },
     }, 'wind-vector-arrows')
   }
 }
@@ -492,10 +521,10 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         layers: [{
           id: 'osm-raster-base', type: 'raster', source: 'osmRaster', minzoom: 0, maxzoom: 19,
           paint: {
-            'raster-brightness-min': 0.02,
-            'raster-brightness-max': 0.24,
-            'raster-saturation': -0.14,
-            'raster-contrast': 0.18,
+            'raster-brightness-min': 0.18,
+            'raster-brightness-max': 0.92,
+            'raster-saturation': -0.24,
+            'raster-contrast': 0.08,
             'raster-fade-duration': 180,
           },
         }],
@@ -629,8 +658,9 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       if (!instance.getSource('albertaDem')) return
       ensureWindLayers(instance)
       if (vectors.length) ensureWindSpeedLayer(instance, vectors)
+      if (instance.getLayer('wind-vector-arrows')) instance.setLayoutProperty('wind-vector-arrows', 'visibility', 'none')
       for (const id of ['wind-speed-raster', 'wind-vector-arrows', 'wind-flow-trails', 'wind-flow-heads']) {
-        if (instance.getLayer(id)) instance.setLayoutProperty(id, 'visibility', windVisible ? 'visible' : 'none')
+        if (id !== 'wind-vector-arrows' && instance.getLayer(id)) instance.setLayoutProperty(id, 'visibility', windVisible ? 'visible' : 'none')
       }
       if (!windVisible || !vectors.length) {
         ;(instance.getSource('wind-vector-grid') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
@@ -649,7 +679,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         west: Math.min(...vectors.map((vector) => vector.longitude)), east: Math.max(...vectors.map((vector) => vector.longitude)),
         south: Math.min(...vectors.map((vector) => vector.latitude)), north: Math.max(...vectors.map((vector) => vector.latitude)),
       }
-      const particles = Array.from({ length: 112 }, () => ({
+      const particles = Array.from({ length: 360 }, () => ({
         longitude: particleBounds.west + Math.random() * (particleBounds.east - particleBounds.west),
         latitude: particleBounds.south + Math.random() * (particleBounds.north - particleBounds.south),
         trail: [] as Array<[number, number]>, speedKmh: 0,
@@ -670,7 +700,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
             continue
           }
           const pixel = instance.project([particle.longitude, particle.latitude])
-          const speedPixelsPerSecond = Math.max(1.1, vector.speedKmh * 0.42)
+          const speedPixelsPerSecond = 26 + vector.speedKmh * 0.5
           const nextPixel = [
             pixel.x + (vector.eastKmh / vector.speedKmh) * speedPixelsPerSecond * elapsedSeconds,
             pixel.y - (vector.northKmh / vector.speedKmh) * speedPixelsPerSecond * elapsedSeconds,
@@ -680,7 +710,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
           particle.latitude = nextPoint.lat
           particle.speedKmh = vector.speedKmh
           particle.trail.push([particle.longitude, particle.latitude])
-          if (particle.trail.length > 6) particle.trail.shift()
+          if (particle.trail.length > 7) particle.trail.shift()
           if (particle.longitude < particleBounds.west || particle.longitude > particleBounds.east || particle.latitude < particleBounds.south || particle.latitude > particleBounds.north) {
             particle.trail = []
             particle.longitude = particleBounds.west + Math.random() * (particleBounds.east - particleBounds.west)
@@ -718,16 +748,17 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
   const direction = windDirection === undefined ? undefined : toWindDirection(windDirection)
   const windVectors = windVectorsAt(windNodes, windTime)
   const meanWindSpeed = windVectors.length ? windVectors.reduce((total, vector) => total + vector.speedKmh, 0) / windVectors.length : null
+  const peakWindSpeed = windVectors.length ? Math.max(...windVectors.map((vector) => vector.speedKmh)) : null
   return <div className={`map-frame ${terrainEnabled ? 'terrain-active' : 'terrain-flat'}`}>
     <div ref={element} className="map-canvas" aria-label="Map centered on the selected Alberta area" />
     <div className="map-coordinates"><Compass size={13} /> {lat.toFixed(3)}° N · {Math.abs(lon).toFixed(3)}° W</div>
     {direction !== undefined && !windVisible && <div className="map-wind" style={{ transform: `rotate(${direction}deg)` }} aria-label={`Wind blows toward ${windDirectionLabel(direction)}`}><Wind size={24} /></div>}
     <div className="map-field-badge"><span className={windVisible && windNodes.length ? 'field-live-dot' : ''} />{windVisible ? `${windNodes.length || '—'}-point wind field` : 'Wind field hidden'} · {terrainEnabled ? '3D relief' : '2D'}</div>
     {windVisible && windNodes.length > 0 && <div className="wind-speed-legend" aria-label="Wind speed scale in kilometres per hour">
-      <div className="wind-speed-legend-heading"><span><Wind size={12} /> WIND SPEED</span><b>{meanWindSpeed === null ? '—' : `${Math.round(meanWindSpeed)} km/h avg`}</b></div>
+      <div className="wind-speed-legend-heading"><span><Wind size={13} /> WIND SPEED <small>KM/H</small></span><b>{meanWindSpeed === null ? '—' : `${Math.round(meanWindSpeed)} avg`}<i />{peakWindSpeed === null ? '—' : `${Math.round(peakWindSpeed)} peak`}</b></div>
       <div className="wind-speed-ramp" />
-      <div className="wind-speed-ticks"><span>0</span><span>20</span><span>40</span><span>60</span><span>100</span><span>200+</span></div>
-      <small>Colour = speed · white streaks = flow direction</small>
+      <div className="wind-speed-ticks"><span>0</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>60</span><span>80</span><span>100</span><span>150</span><span>200+</span></div>
+      <small>Colour shows forecast speed · white animated streaks show the wind direction · {windTime ? `${new Date(windTime).toISOString().slice(11, 16)} UTC` : 'time unavailable'}</small>
     </div>}
     <div className="map-caption">Basemap © OpenStreetMap · Terrain © Mapzen · Wind: Open-Meteo</div>
   </div>
@@ -878,6 +909,7 @@ export function App() {
   const workspace = useWorkspaceState()
   const { view: active, setView: setActive, location, setLocation, windVisible, setWindVisible, terrainEnabled, setTerrainEnabled, selectedTime, setSelectedTime, selectedDate, setSelectedDate, firmsProduct, setFirmsProduct, compareProductA: compareSourceA, setCompareProductA: setCompareSourceA, compareProductB: compareSourceB, setCompareProductB: setCompareSourceB, firmsDays, setFirmsDays } = workspace
   const [navOpen, setNavOpen] = useState(false)
+  const [archiveCatalogExpanded, setArchiveCatalogExpanded] = useState(false)
   const [windOverride, setWindOverride] = useState<number | null>(null)
   const [horizon, setHorizon] = useState(6)
   const [compareMode, setCompareMode] = useState<'swipe' | 'side-by-side'>('swipe')
@@ -891,6 +923,7 @@ export function App() {
   const windField = useWindField(location.lat, location.lon)
   const firms = useFirms(location.lat, location.lon, firmsProduct, firmsDays, selectedDate)
   const firmsCoverage = useFirmsCoverage(active === 'Data & Sources')
+  const firmsArchiveCatalog = useFirmsArchiveCatalog(active === 'Data & Sources')
   const compareA = useFirms(location.lat, location.lon, compareSourceA, firmsDays, selectedDate)
   const compareB = useFirms(location.lat, location.lon, compareSourceB, firmsDays, selectedDate)
   const terrainAnalysis = useTerrainAnalysis(location.lat, location.lon, active === 'Terrain', terrainRefresh)
@@ -997,6 +1030,7 @@ export function App() {
     <div className="source-card"><div><Mountain size={16} /><b>Mapzen Terrain Tiles · Terrarium</b><span className={terrainAnalysis.state === 'ready' ? 'source-live' : 'source-missing'}>{terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state.toUpperCase()}</span></div><p>Bare-earth elevation tiles drive the 3D relief and the selected-point slope/aspect and transect samples.</p><small>Terrarium RGB · Canadian source attribution: Open Government Licence — Canada. Land cover and fuel classes remain unconnected.</small><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Open-Meteo Elevation</b><span className={elevation.state === 'ready' ? 'source-live' : 'source-missing'}>{elevation.state === 'ready' ? 'CONNECTED' : elevation.state.toUpperCase()}</span></div><p>{elevation.state === 'ready' ? `Point elevation: ${Math.round(elevation.value)} m.` : 'Point elevation lookup for selected coordinates.'}</p><small>One coordinate sample · metres above sea level</small></div>
     <div className="source-card source-disconnected"><div><Satellite size={16} /><b>NASA FIRMS · product coverage</b><span className={firmsCoverage.status === 'ready' ? 'source-live' : 'source-missing'}>{firmsCoverage.status === 'ready' ? `${firmsCoverage.products.length} PRODUCTS` : firmsCoverage.status === 'loading' ? 'CHECKING…' : firmsCoverage.status === 'key-missing' ? 'KEY NOT SET' : 'COVERAGE UNKNOWN'}</span></div><p>MODIS and VIIRS area requests run through the server-side proxy. The MAP_KEY is never sent to the browser. These date ranges describe product availability, not clear-sky coverage or guaranteed detections at this location.</p><button className="coverage-refresh" onClick={() => void firmsCoverage.load()} disabled={firmsCoverage.status === 'loading'}>{firmsCoverage.status === 'loading' ? <><span className="spinner" /> Checking product dates…</> : <><RefreshCw size={12} /> {firmsCoverage.status === 'ready' ? 'Refresh product coverage' : 'Check NASA product coverage'}</>}</button>{firmsCoverage.status === 'ready' ? <div className="firms-coverage-list">{firmsSources.map((item) => { const match = firmsCoverage.products.find((product) => product.product === item.id); return <div className="firms-coverage-row" key={item.id}><span>{item.label}</span><b>{match ? `${match.minDate} → ${match.maxDate}` : 'Not listed by FIRMS'}</b></div> })}{firmsCoverage.fetchedAtUtc && <small>Coverage retrieved {new Date(firmsCoverage.fetchedAtUtc).toISOString().slice(0, 16).replace('T', ' ')} UTC · cached for one hour</small>}</div> : <small>{firmsCoverage.status === 'key-missing' ? 'Set FIRMS_MAP_KEY in the server’s local .env file to query availability.' : firmsCoverage.status === 'error' ? firmsCoverage.message : 'Select Check NASA product coverage to query the current ranges reported by FIRMS.'}</small>}<small>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} normalized detections · ${firms.source}` : 'Coverage comes from NASA’s data_availability service; historical imports and per-location observation completeness are separate.'}</small><a href="https://firms.modaps.eosdis.nasa.gov/api/data_availability/" target="_blank" rel="noreferrer">FIRMS availability API <ChevronRight size={12} /></a></div>
+    <div className="source-card archive-catalog-card"><div><Database size={16} /><b>Local FIRMS archive catalog</b><span className={firmsArchiveCatalog.status === 'ready' && firmsArchiveCatalog.archives.length ? 'source-live' : 'source-missing'}>{firmsArchiveCatalog.status === 'loading' ? 'SCANNING' : firmsArchiveCatalog.status === 'error' ? 'UNAVAILABLE' : firmsArchiveCatalog.status === 'ready' ? `${firmsArchiveCatalog.archives.length} IMPORTS` : 'NOT LOADED'}</span></div><p>{firmsArchiveCatalog.status === 'ready' && !firmsArchiveCatalog.archives.length ? 'No historical import is registered in this workspace.' : 'Verified import manifests from this workspace; the original archive files remain local.'}</p><button className="coverage-refresh" aria-expanded={archiveCatalogExpanded} onClick={() => { const expanded = !archiveCatalogExpanded; setArchiveCatalogExpanded(expanded); if (expanded && (firmsArchiveCatalog.status === 'idle' || firmsArchiveCatalog.status === 'error')) void firmsArchiveCatalog.load() }}>{archiveCatalogExpanded ? 'Hide archive details' : 'View archive catalog'}</button>{archiveCatalogExpanded && <><div className="archive-catalog-actions"><small>Manifests and QA pairs · raw and normalized files are never served by this route.</small><button type="button" onClick={() => void firmsArchiveCatalog.load()} disabled={firmsArchiveCatalog.status === 'loading'}><RefreshCw size={12} /> Refresh</button></div>{firmsArchiveCatalog.status === 'error' ? <small className="archive-catalog-warning">{firmsArchiveCatalog.message}</small> : firmsArchiveCatalog.status === 'loading' ? <small>Checking data/manifests/firms for valid manifests and QA reports.</small> : firmsArchiveCatalog.status === 'ready' && firmsArchiveCatalog.archives.length ? <div className="archive-catalog-list">{firmsArchiveCatalog.archives.map((archive) => <article className="archive-catalog-item" key={archive.importId}><div><b>{firmsSources.find((item) => item.id === archive.product)?.label ?? archive.product}</b><span className={archive.qaStatus === 'accepted' ? 'archive-qa-good' : 'archive-qa-review'}>{archive.qaStatus === 'accepted' ? 'QA ACCEPTED' : 'ACCEPTED WITH EXCLUSIONS'}</span></div><small>{archive.minDateUtc} → {archive.maxDateUtc} UTC</small><small>{archive.rowsAccepted.toLocaleString()} rows accepted · {archive.rowsRejected.toLocaleString()} rejected · {archive.rowsDuplicate.toLocaleString()} duplicate</small><small>{archive.sourceFile}{archive.sourceRetrievedAtUtc ? ` · retrieved ${new Date(archive.sourceRetrievedAtUtc).toISOString().slice(0, 10)} UTC` : ' · retrieval time not recorded'}</small><code title={archive.sourceSha256}>SHA‑256 · {archive.sourceSha256.slice(0, 16)}…</code>{archive.warnings.length > 0 && <small className="archive-catalog-warning">{archive.warnings[0]}</small>}</article>)}{firmsArchiveCatalog.invalidManifestCount > 0 && <small className="archive-catalog-warning">{firmsArchiveCatalog.invalidManifestCount} invalid manifest or QA pair(s) were skipped.</small>}{firmsArchiveCatalog.truncated && <small>Showing the first 500 manifests.</small>}</div> : firmsArchiveCatalog.status === 'ready' ? <div className="archive-catalog-empty"><b>No historical archive imported</b><span>Import a real FIRMS CSV with the local CLI to populate this catalog. Until then, Calendar remains limited to live API requests.</span><code>npm run data:firms:ingest -- --file … --product …</code></div> : <small>Opening the catalog does not query NASA or publish archive files.</small>}</>}</div>
   </> : active === 'Scenario' ? <>
     <div className="scenario-banner"><AlertTriangle size={16} /><div><b>SCENARIO ONLY</b><span>Not an operational forecast or instruction</span></div></div>
     <div className="panel-heading"><div><h2>Wind sensitivity</h2><p>Explore an input; no fire spread is computed</p></div><Flame size={18} /></div>

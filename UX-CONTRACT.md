@@ -12,6 +12,7 @@ The application communicates satellite thermal detections, weather observations/
 - A selected observation or time bin stays linked across map, chart, calendar and inspector.
 - Mobile navigation uses a dismissible drawer; detail panels become accessible bottom sheets.
 - Data & Sources may query NASA FIRMS `data_availability` through the server proxy; show returned product date ranges with a retrieval timestamp, explain that dates do not prove coverage for an AOI, and preserve unknown/key-missing/error states.
+- Data & Sources reads validated local FIRMS manifest/QA pairs from the server; expose product, observed date range, accepted/rejected/duplicate counts and source hash without serving the private raw or normalized archive files.
 
 ## Canonical controls
 

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -205,6 +205,65 @@ async function getFirmsAvailability(response) {
   }
 }
 
+async function getFirmsArchiveCatalog(response) {
+  const manifestDir = path.join(root, 'data', 'manifests', 'firms')
+  let names
+  try {
+    names = await readdir(manifestDir)
+  } catch (error) {
+    if (error?.code === 'ENOENT') return json(response, 200, { generatedAtUtc: new Date().toISOString(), archives: [], invalidManifestCount: 0, truncated: false })
+    return json(response, 500, { code: 'archive_catalog_unavailable', message: 'Local FIRMS archive manifests could not be read.' })
+  }
+
+  const manifestNames = names.filter((name) => name.endsWith('.manifest.json')).sort().slice(0, 500)
+  const archives = []
+  let invalidManifestCount = 0
+  for (const name of manifestNames) {
+    const importId = name.slice(0, -'.manifest.json'.length)
+    if (!/^[a-z0-9_-]{1,80}$/.test(importId)) { invalidManifestCount += 1; continue }
+    try {
+      const manifest = JSON.parse(await readFile(path.join(manifestDir, name), 'utf8'))
+      const qa = JSON.parse(await readFile(path.join(manifestDir, `${importId}.qa.json`), 'utf8'))
+      const observed = manifest.observed
+      const hash = manifest.input?.sha256
+      const normalizedHash = manifest.normalized?.sha256
+      if (manifest.importId !== importId || !allowedSources.has(manifest.product)
+        || !/^[a-f0-9]{64}$/.test(hash || '') || !/^[a-f0-9]{64}$/.test(normalizedHash || '') || !observed
+        || !Number.isSafeInteger(observed.rowsAccepted) || observed.rowsAccepted < 1
+        || !Number.isSafeInteger(observed.rowsRead) || observed.rowsRead < 1 || !Number.isSafeInteger(observed.rowsRejected) || observed.rowsRejected < 0
+        || !Number.isSafeInteger(observed.rowsDuplicate) || observed.rowsDuplicate < 0
+        || observed.rowsAccepted + observed.rowsRejected + observed.rowsDuplicate !== observed.rowsRead
+        || !validateUtcDate(observed.minDateUtc) || !validateUtcDate(observed.maxDateUtc)
+        || observed.minDateUtc > observed.maxDateUtc
+        || qa.importId !== importId || qa.product !== manifest.product || qa.rawSha256 !== hash
+        || qa.normalizedSha256 !== normalizedHash || qa.rowsRead !== observed.rowsRead
+        || qa.rowsAccepted !== observed.rowsAccepted || qa.rowsRejected !== observed.rowsRejected
+        || qa.rowsDuplicate !== observed.rowsDuplicate
+        || !['accepted', 'accepted_with_exclusions'].includes(qa.status)) {
+        invalidManifestCount += 1; continue
+      }
+      archives.push({
+        importId,
+        product: manifest.product,
+        sourceFile: path.basename(String(manifest.sourceFile || 'FIRMS archive.csv')).slice(0, 160),
+        sourceRetrievedAtUtc: typeof manifest.sourceRetrievedAtUtc === 'string' && Number.isFinite(Date.parse(manifest.sourceRetrievedAtUtc)) ? new Date(manifest.sourceRetrievedAtUtc).toISOString() : null,
+        minDateUtc: observed.minDateUtc,
+        maxDateUtc: observed.maxDateUtc,
+        rowsRead: observed.rowsRead,
+        rowsAccepted: observed.rowsAccepted,
+        rowsRejected: observed.rowsRejected,
+        rowsDuplicate: observed.rowsDuplicate,
+        sourceSha256: hash,
+        qaStatus: qa.status,
+        warnings: Array.isArray(manifest.warnings) ? manifest.warnings.filter((value) => typeof value === 'string').slice(0, 5) : [],
+      })
+    } catch {
+      invalidManifestCount += 1
+    }
+  }
+  return json(response, 200, { generatedAtUtc: new Date().toISOString(), archives, invalidManifestCount, truncated: names.filter((name) => name.endsWith('.manifest.json')).length > 500 })
+}
+
 const mimeTypes = new Map([
   ['.html', 'text/html; charset=utf-8'], ['.js', 'text/javascript; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'], ['.json', 'application/json; charset=utf-8'],
@@ -248,6 +307,10 @@ const server = createServer(async (request, response) => {
   if (url.pathname === '/api/firms/availability') {
     if (request.method !== 'GET') return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET' })
     return getFirmsAvailability(response)
+  }
+  if (url.pathname === '/api/firms/archive-catalog') {
+    if (request.method !== 'GET') return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET' })
+    return getFirmsArchiveCatalog(response)
   }
   if (url.pathname.startsWith('/api/')) return json(response, 404, { code: 'not_found' })
   if (!['GET', 'HEAD'].includes(request.method || '')) return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET, HEAD' })
