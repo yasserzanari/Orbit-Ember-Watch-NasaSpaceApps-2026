@@ -489,6 +489,7 @@ function ensureWindLayers(instance: MapLibreMap) {
 function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, syncGroup, terrainTransect }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][] }) {
   const element = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
   const selectPoint = useRef(onSelectPoint)
   const selectObservation = useRef(onSelectObservation)
   const observationsRef = useRef(observations)
@@ -498,6 +499,13 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
   useEffect(() => { selectObservation.current = onSelectObservation }, [onSelectObservation])
   useEffect(() => { observationsRef.current = observations }, [observations])
   useEffect(() => { windNodesRef.current = windNodes; windTimeRef.current = windTime }, [windNodes, windTime])
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const syncPreference = () => setReducedMotion(preference.matches)
+    syncPreference()
+    preference.addEventListener('change', syncPreference)
+    return () => preference.removeEventListener('change', syncPreference)
+  }, [])
 
   useEffect(() => {
     if (!element.current || map.current) return
@@ -658,9 +666,14 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       if (!instance.getSource('albertaDem')) return
       ensureWindLayers(instance)
       if (vectors.length) ensureWindSpeedLayer(instance, vectors)
-      if (instance.getLayer('wind-vector-arrows')) instance.setLayoutProperty('wind-vector-arrows', 'visibility', 'none')
-      for (const id of ['wind-speed-raster', 'wind-vector-arrows', 'wind-flow-trails', 'wind-flow-heads']) {
-        if (id !== 'wind-vector-arrows' && instance.getLayer(id)) instance.setLayoutProperty(id, 'visibility', windVisible ? 'visible' : 'none')
+      if (instance.getLayer('osm-raster-base')) {
+        instance.setPaintProperty('osm-raster-base', 'raster-brightness-min', windVisible ? 0.18 : 0.02)
+        instance.setPaintProperty('osm-raster-base', 'raster-brightness-max', windVisible ? 0.92 : 0.24)
+      }
+      if (instance.getLayer('wind-speed-raster')) instance.setLayoutProperty('wind-speed-raster', 'visibility', windVisible ? 'visible' : 'none')
+      if (instance.getLayer('wind-vector-arrows')) instance.setLayoutProperty('wind-vector-arrows', 'visibility', windVisible && reducedMotion ? 'visible' : 'none')
+      for (const id of ['wind-flow-trails', 'wind-flow-heads']) {
+        if (instance.getLayer(id)) instance.setLayoutProperty(id, 'visibility', windVisible && !reducedMotion ? 'visible' : 'none')
       }
       if (!windVisible || !vectors.length) {
         ;(instance.getSource('wind-vector-grid') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
@@ -675,6 +688,11 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         properties: { speedKmh: vector.speedKmh, directionTo: vector.directionTo },
       }))
       vectorSource.setData({ type: 'FeatureCollection', features: arrowFeatures } as GeoJSON.FeatureCollection)
+      if (reducedMotion || document.visibilityState !== 'visible') {
+        ;(instance.getSource('wind-flow-trails') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
+        ;(instance.getSource('wind-flow-heads') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
+        return
+      }
       const particleBounds = {
         west: Math.min(...vectors.map((vector) => vector.longitude)), east: Math.max(...vectors.map((vector) => vector.longitude)),
         south: Math.min(...vectors.map((vector) => vector.latitude)), north: Math.max(...vectors.map((vector) => vector.latitude)),
@@ -686,6 +704,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       }))
       let previousFrame = performance.now()
       timer = setInterval(() => {
+        if (document.visibilityState !== 'visible') return
         const now = performance.now()
         const elapsedSeconds = Math.min((now - previousFrame) / 1000, 0.25)
         previousFrame = now
@@ -732,13 +751,20 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         ;(instance.getSource('wind-flow-heads') as GeoJSONSource).setData({ type: 'FeatureCollection', features: headFeatures } as GeoJSON.FeatureCollection)
       }, 70)
     }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (timer) clearInterval(timer)
+        timer = null
+      } else updateWind()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     if (instance.isStyleLoaded()) updateWind()
     else {
       instance.once('load', updateWind)
       removeLoadListener = () => instance.off('load', updateWind)
     }
-    return () => { if (timer) clearInterval(timer); removeLoadListener() }
-  }, [windNodes, windTime, windVisible])
+    return () => { if (timer) clearInterval(timer); removeLoadListener(); document.removeEventListener('visibilitychange', handleVisibilityChange) }
+  }, [windNodes, windTime, windVisible, reducedMotion])
 
   useEffect(() => {
     if (!map.current) return
@@ -758,7 +784,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       <div className="wind-speed-legend-heading"><span><Wind size={13} /> WIND SPEED <small>KM/H</small></span><b>{meanWindSpeed === null ? '—' : `${Math.round(meanWindSpeed)} avg`}<i />{peakWindSpeed === null ? '—' : `${Math.round(peakWindSpeed)} peak`}</b></div>
       <div className="wind-speed-ramp" />
       <div className="wind-speed-ticks"><span>0</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>60</span><span>80</span><span>100</span><span>150</span><span>200+</span></div>
-      <small>Colour shows forecast speed · white animated streaks show the wind direction · {windTime ? `${new Date(windTime).toISOString().slice(11, 16)} UTC` : 'time unavailable'}</small>
+      <small>Colour shows forecast speed · {reducedMotion ? 'static arrows show direction' : 'white streaks show wind direction'} · {windTime ? `${new Date(windTime).toISOString().slice(11, 16)} UTC` : 'time unavailable'}</small>
     </div>}
     <div className="map-caption">Basemap © OpenStreetMap · Terrain © Mapzen · Wind: Open-Meteo</div>
   </div>
