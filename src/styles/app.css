@@ -482,6 +482,77 @@
   .dashboard-chart-card, .dashboard-coverage-note { backdrop-filter: blur(12px) saturate(125%); }
 }
 
+/* Dashboard acrylic surfaces: let the live map show through without lowering text contrast. */
+.dashboard-workspace .map-toolbar,
+.dashboard-workspace .inspector,
+.dashboard-chart-card,
+.dashboard-coverage-note,
+.dashboard-map-summary,
+.dashboard-workspace .wind-speed-legend {
+  border-color: rgba(167, 220, 226, .24);
+  background-color: rgba(9, 22, 32, .74);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(235, 251, 252, .09);
+  backdrop-filter: blur(22px) saturate(148%);
+  -webkit-backdrop-filter: blur(22px) saturate(148%);
+}
+.dashboard-workspace .map-toolbar {
+  background-image: linear-gradient(105deg, rgba(72, 180, 187, .09), transparent 48%), linear-gradient(180deg, rgba(18, 39, 51, .82), rgba(7, 19, 28, .72));
+}
+.dashboard-map-summary {
+  width: 308px;
+  gap: 11px;
+  padding: 15px;
+  border-color: rgba(168, 223, 228, .34);
+  background-image: linear-gradient(135deg, rgba(235, 252, 255, .085), transparent 38%), linear-gradient(145deg, rgba(20, 42, 55, .8), rgba(7, 19, 29, .73));
+  box-shadow: 0 20px 52px rgba(0, 0, 0, .38), 0 0 30px rgba(37, 210, 216, .045), inset 0 1px 0 rgba(244, 254, 255, .13);
+}
+.dashboard-summary-header { min-height: 38px; }
+.dashboard-summary-emblem {
+  border-color: rgba(255, 153, 102, .35);
+  background: linear-gradient(145deg, rgba(242, 104, 59, .25), rgba(244, 177, 47, .08));
+  box-shadow: 0 0 20px rgba(242, 104, 59, .1), inset 0 1px 0 rgba(255, 255, 255, .14);
+}
+.dashboard-status-pill { background: rgba(5, 16, 24, .38); }
+.dashboard-detection-count {
+  border-color: rgba(169, 217, 221, .19);
+  background: linear-gradient(115deg, rgba(26, 55, 68, .78), rgba(7, 23, 33, .54));
+  box-shadow: inset 0 1px 0 rgba(245, 255, 255, .08), 0 8px 20px rgba(0, 0, 0, .13);
+}
+.dashboard-condition-row>div {
+  background: linear-gradient(145deg, rgba(23, 48, 61, .78), rgba(8, 22, 32, .62));
+}
+.dashboard-load-button {
+  min-height: 40px;
+  border-color: rgba(79, 231, 226, .42);
+  background: linear-gradient(110deg, rgba(37, 210, 216, .2), rgba(37, 210, 216, .075));
+  box-shadow: inset 0 1px 0 rgba(230, 255, 255, .13), 0 6px 18px rgba(0, 0, 0, .16);
+  color: #b7fffa;
+}
+.dashboard-load-button:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(230, 255, 255, .2), 0 8px 22px rgba(0, 0, 0, .24), 0 0 20px rgba(37, 210, 216, .11);
+}
+.dashboard-workspace .weather-primary,
+.dashboard-workspace .weather-metric,
+.dashboard-chart-card,
+.dashboard-coverage-note {
+  box-shadow: inset 0 1px 0 rgba(236, 250, 252, .085), 0 10px 26px rgba(0, 0, 0, .17);
+}
+.dashboard-workspace .weather-metric { background: rgba(13, 31, 42, .58); }
+.dashboard-chart-card { background-image: linear-gradient(140deg, rgba(221, 251, 253, .035), transparent 44%); }
+.dashboard-coverage-note { background-image: linear-gradient(140deg, rgba(244, 177, 47, .09), transparent 52%); }
+.dashboard-workspace .map-frame .maplibregl-ctrl-group { background: rgba(9, 22, 32, .76); backdrop-filter: blur(14px); }
+@media (max-width: 1100px) and (min-width: 761px) {
+  .dashboard-map-summary { width: 242px; padding: 11px; gap: 8px; }
+}
+@media (max-width: 760px) {
+  .dashboard-map-summary { width: min(224px, calc(100% - 16px)); padding: 10px; gap: 7px; }
+  .dashboard-workspace .map-toolbar,
+  .dashboard-workspace .inspector,
+  .dashboard-chart-card,
+  .dashboard-coverage-note,
+  .dashboard-map-summary { backdrop-filter: blur(16px) saturate(135%); -webkit-backdrop-filter: blur(16px) saturate(135%); }
+}
+
 /* Live Map: left-side glass controls, right-side inspection, and returned-date playback. */
 .live-map-workspace { grid-template-rows: minmax(0, 1fr) 108px; }
 .live-map-dock { position: absolute; z-index: 6; top: 72px; bottom: 45px; left: 12px; display: grid; width: 276px; max-width: calc(100% - 24px); align-content: start; gap: 10px; overflow-y: auto; padding: 12px; border: 1px solid var(--glass-border); border-radius: 14px; background: linear-gradient(145deg, rgba(18, 38, 50, .9), rgba(7, 19, 28, .86)); box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight); backdrop-filter: blur(var(--glass-blur)) saturate(140%); scrollbar-color: #39535f transparent; scrollbar-width: thin; }
