@@ -503,30 +503,45 @@
   gap: 11px;
   padding: 15px;
   border-color: rgba(168, 223, 228, .34);
-  background-image: linear-gradient(135deg, rgba(235, 252, 255, .085), transparent 38%), linear-gradient(145deg, rgba(20, 42, 55, .8), rgba(7, 19, 29, .73));
-  box-shadow: 0 20px 52px rgba(0, 0, 0, .38), 0 0 30px rgba(37, 210, 216, .045), inset 0 1px 0 rgba(244, 254, 255, .13);
+  background-image: radial-gradient(ellipse at 0 0, rgba(74, 205, 210, .12), transparent 48%), linear-gradient(135deg, rgba(235, 252, 255, .085), transparent 38%), linear-gradient(145deg, rgba(20, 42, 55, .82), rgba(7, 19, 29, .76));
+  box-shadow: 0 20px 52px rgba(0, 0, 0, .38), 0 0 30px rgba(37, 210, 216, .07), inset 0 1px 0 rgba(244, 254, 255, .16), inset 0 0 0 1px rgba(255, 255, 255, .025);
+  backdrop-filter: blur(24px) saturate(155%);
+  -webkit-backdrop-filter: blur(24px) saturate(155%);
 }
-.dashboard-summary-header { min-height: 38px; }
+.dashboard-summary-header { min-height: 42px; gap: 10px; }
+.dashboard-summary-title { gap: 4px; }
+.dashboard-summary-title>span { color: #a6c0c7; letter-spacing: .13em; }
+.dashboard-summary-title h2 { font-size: 14px; letter-spacing: -.025em; }
+.dashboard-summary-context { min-height: 26px; padding: 0 9px; border: 1px solid rgba(170, 215, 221, .12); border-radius: 8px; background: rgba(4, 16, 24, .25); }
 .dashboard-summary-emblem {
   border-color: rgba(255, 153, 102, .35);
   background: linear-gradient(145deg, rgba(242, 104, 59, .25), rgba(244, 177, 47, .08));
   box-shadow: 0 0 20px rgba(242, 104, 59, .1), inset 0 1px 0 rgba(255, 255, 255, .14);
 }
-.dashboard-status-pill { background: rgba(5, 16, 24, .38); }
+.dashboard-status-pill { min-height: 25px; padding: 0 9px; border-color: rgba(185, 219, 224, .2); background: rgba(5, 16, 24, .44); font-size: 9px; }
 .dashboard-detection-count {
+  position: relative;
+  min-height: 82px;
   border-color: rgba(169, 217, 221, .19);
-  background: linear-gradient(115deg, rgba(26, 55, 68, .78), rgba(7, 23, 33, .54));
-  box-shadow: inset 0 1px 0 rgba(245, 255, 255, .08), 0 8px 20px rgba(0, 0, 0, .13);
+  background-image: linear-gradient(110deg, rgba(244, 177, 47, .08), transparent 54%), linear-gradient(115deg, rgba(26, 55, 68, .82), rgba(7, 23, 33, .62));
+  box-shadow: inset 0 1px 0 rgba(245, 255, 255, .1), 0 10px 24px rgba(0, 0, 0, .18);
 }
+.dashboard-detection-count>span { text-shadow: 0 0 22px rgba(244, 177, 47, .2); }
+.dashboard-detection-count small { max-width: 190px; line-height: 1.45; }
 .dashboard-condition-row>div {
-  background: linear-gradient(145deg, rgba(23, 48, 61, .78), rgba(8, 22, 32, .62));
+  min-height: 58px;
+  background-image: linear-gradient(135deg, rgba(209, 244, 247, .045), transparent 55%), linear-gradient(145deg, rgba(23, 48, 61, .78), rgba(8, 22, 32, .62));
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
 }
+.dashboard-condition-row>div:hover { transform: translateY(-1px); border-color: rgba(114, 226, 226, .35); }
 .dashboard-load-button {
-  min-height: 40px;
+  min-height: 42px;
   border-color: rgba(79, 231, 226, .42);
-  background: linear-gradient(110deg, rgba(37, 210, 216, .2), rgba(37, 210, 216, .075));
+  background: linear-gradient(105deg, rgba(37, 210, 216, .23), rgba(37, 210, 216, .09));
   box-shadow: inset 0 1px 0 rgba(230, 255, 255, .13), 0 6px 18px rgba(0, 0, 0, .16);
   color: #b7fffa;
+  font-size: 10px;
+  letter-spacing: .01em;
 }
 .dashboard-load-button:hover:not(:disabled) {
   box-shadow: inset 0 1px 0 rgba(230, 255, 255, .2), 0 8px 22px rgba(0, 0, 0, .24), 0 0 20px rgba(37, 210, 216, .11);
@@ -545,7 +560,13 @@
   .dashboard-map-summary { width: 242px; padding: 11px; gap: 8px; }
 }
 @media (max-width: 760px) {
-  .dashboard-map-summary { width: min(224px, calc(100% - 16px)); padding: 10px; gap: 7px; }
+  .dashboard-map-summary { width: min(244px, calc(100% - 16px)); padding: 11px; gap: 8px; }
+  .dashboard-summary-header { min-height: 34px; gap: 6px; }
+  .dashboard-summary-title h2 { font-size: 11px; }
+  .dashboard-summary-context { min-height: 23px; padding: 0 6px; }
+  .dashboard-detection-count { min-height: 61px; }
+  .dashboard-condition-row>div { min-height: 48px; }
+  .dashboard-load-button { min-height: 38px; }
   .dashboard-workspace .map-toolbar,
   .dashboard-workspace .inspector,
   .dashboard-chart-card,
