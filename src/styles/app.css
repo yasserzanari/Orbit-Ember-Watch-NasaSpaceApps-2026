@@ -1038,3 +1038,23 @@
   .compare-control-dock>p { display: none; }
   .compare-workspace .compare-bottom { grid-template-columns: minmax(0,1fr); }
 }
+
+/* Keep the displayed speed scale numerically aligned with the interpolated raster. */
+.wind-speed-ramp {
+  background: linear-gradient(90deg,
+    #4c8997 0%, #2a91aa 5%, #2cadc3 10%, #aecd9f 17.5%,
+    #f6ca45 25%, #f48b2f 35%, #e0463a 50%, #cf52a8 75%, #163b48 100%);
+}
+.wind-speed-ticks { position: relative; display: block; height: 12px; }
+.wind-speed-ticks>span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.wind-speed-ticks>span:nth-child(1) { left: 0%; transform: none; }
+.wind-speed-ticks>span:nth-child(2) { left: 5%; }
+.wind-speed-ticks>span:nth-child(3) { left: 10%; }
+.wind-speed-ticks>span:nth-child(4) { left: 15%; }
+.wind-speed-ticks>span:nth-child(5) { left: 20%; }
+.wind-speed-ticks>span:nth-child(6) { left: 25%; }
+.wind-speed-ticks>span:nth-child(7) { left: 30%; }
+.wind-speed-ticks>span:nth-child(8) { left: 40%; }
+.wind-speed-ticks>span:nth-child(9) { left: 50%; }
+.wind-speed-ticks>span:nth-child(10) { left: 75%; }
+.wind-speed-ticks>span:nth-child(11) { left: 100%; transform: translateX(-100%); }

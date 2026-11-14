@@ -167,3 +167,8 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Les sélecteurs produits et actions de chargement MODIS/VIIRS sont réunis dans un dock vitré flottant au-dessus de la carte. Le panneau latéral garde les compteurs, les dates communes et la réserve sur la non-évaluation de l’accord; les séries quotidiennes restent sous la carte.
 - Le dock et les cartes de tendances reprennent les surfaces glassy et les accents de capteur du reste de l’application. Sur mobile, les deux commandes passent côte à côte au-dessus de la carte.
 - Vérification : `npm run build` réussi; `git diff --check` propre. La revue visuelle navigateur reste à effectuer lorsque Chrome démarre sans erreur GPU.
+
+## Avancement — échelle vent cohérente avec le raster
+
+- L’échelle affichait ses repères à intervalles égaux malgré des valeurs irrégulières (0–100 par pas de 10, puis 150 et 200), et son endpoint 200+ était cyan alors que le raster interpolé utilise un bleu-vert sombre. Les repères sont maintenant placés selon la vitesse linéaire 0–200 km/h et les couleurs du dégradé correspondent aux arrêts de `windSpeedColor`.
+- Vérification : `npm run build` réussi et `git diff --check` propre. La capture navigateur a échoué avant la création d’un PNG exploitable; aucun fichier de capture n’est réutilisé.
