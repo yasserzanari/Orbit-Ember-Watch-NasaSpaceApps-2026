@@ -1154,7 +1154,7 @@ export function App() {
   const firmsArchiveCatalog = useFirmsArchiveCatalog(active === 'Data & Sources')
   const compareA = useFirms(location.lat, location.lon, compareSourceA, firmsDays, queryEndDate)
   const compareB = useFirms(location.lat, location.lon, compareSourceB, firmsDays, queryEndDate)
-  const terrainAnalysis = useTerrainAnalysis(location.lat, location.lon, active === 'Terrain', terrainRefresh)
+  const terrainAnalysis = useTerrainAnalysis(location.lat, location.lon, active === 'Terrain' || active === 'Scenario', terrainRefresh)
   const terrainTransect = useMemo(() => terrainTransectCoordinates(location.lat, location.lon), [location.lat, location.lon])
   const selectObservation = useCallback((observation: FireObservation | null) => {
     setActiveDetection(observation && firmsSources.some((product) => product.id === observation.source)
@@ -1203,6 +1203,18 @@ export function App() {
   const weather = hours[safeIndex] ?? null
   const directionTo = weather ? toWindDirection(weather.windDirectionFrom) : undefined
   const displayWind = windOverride ?? weather?.windSpeed ?? 0
+  const scenarioWindNodes = useMemo(() => {
+    if (windOverride === null || !weather || !windField.nodes.length) return windField.nodes
+    const baseSpeed = weather.windSpeed
+    const scale = baseSpeed > 0 ? windOverride / baseSpeed : null
+    return windField.nodes.map((node) => ({
+      ...node,
+      samples: node.samples.map((sample) => ({
+        ...sample,
+        speedKmh: sample.speedKmh === null ? null : Math.min(300, scale === null ? windOverride : sample.speedKmh * scale),
+      })),
+    }))
+  }, [windOverride, weather, windField.nodes])
   const nowIndex = Math.max(0, hours.findIndex((hour) => new Date(hour.time).getTime() >= Date.now()))
   const forecastStartIndex = Math.min(nowIndex, Math.max(hours.length - 1, 0))
   const visibleHours = hours.slice(forecastStartIndex, forecastStartIndex + 36)
@@ -1363,6 +1375,7 @@ export function App() {
     <div className="panel-heading"><div><h2>Wind sensitivity</h2><p>Explore an input; no fire spread is computed</p></div><Flame size={18} /></div>
     {weather && <div className="scenario-source">Input at {new Date(weather.time).toISOString().slice(0, 16).replace('T', ' ')} UTC · source forecast {Math.round(weather.windSpeed)} km/h {windDirectionLabel(weather.windDirectionFrom)}</div>}
     <label className="field-label" htmlFor="wind-override">Wind speed hypothesis <b>{windOverride ?? Math.round(weather?.windSpeed ?? 0)} km/h</b></label><input id="wind-override" type="range" min="0" max="100" value={windOverride ?? Math.round(weather?.windSpeed ?? 0)} onChange={(event) => setWindOverride(Number(event.target.value))} />
+    <div className="scenario-wind-note"><span>Map colors and stream speed are rescaled against the selected forecast. Direction is retained; this is a uniform sensitivity view, not a fire-spread calculation.</span>{windOverride !== null && <button type="button" onClick={() => setWindOverride(null)}>Use forecast</button>}</div>
     <label className="field-label" htmlFor="horizon">Scenario horizon <b>{horizon} hours</b></label><select id="horizon" className="module-select" value={horizon} onChange={(event) => setHorizon(Number(event.target.value))}><option value={1}>1 hour</option><option value={3}>3 hours</option><option value={6}>6 hours</option><option value={12}>12 hours</option><option value={24}>24 hours</option></select>
     <div className="module-empty compact-empty"><Mountain size={19} /><b>Spread envelope unavailable</b><p>A dated incident perimeter, documented fuel type, fuel moisture, terrain raster and validated FBP model are missing. This view will not draw synthetic fire growth.</p></div>
     <div className="scenario-input-state"><span>Weather input</span><b>{weather ? 'Available · Open-Meteo' : 'Loading'}</b><span>Incident perimeter</span><b>Missing</b><span>FBP fuel & moisture</span><b>Missing</b><span>Validated model</span><b>Not configured</b></div>
@@ -1395,8 +1408,19 @@ export function App() {
             <div className="compare-mode-control" role="group" aria-label="Comparison map layout"><button className={compareMode === 'swipe' ? 'selected' : ''} onClick={() => setCompareMode('swipe')} aria-pressed={compareMode === 'swipe'}>↔ Swipe</button><button className={compareMode === 'side-by-side' ? 'selected' : ''} onClick={() => setCompareMode('side-by-side')} aria-pressed={compareMode === 'side-by-side'}>▥ Side-by-side</button></div>
             {compareMode === 'swipe' && <><div className="compare-swipe-divider" style={{ left: `${compareSplit}%` }} aria-hidden="true"><span>↔</span></div><input className="compare-swipe-input" type="range" min="15" max="85" value={compareSplit} onChange={(event) => setCompareSplit(Number(event.target.value))} aria-label="Adjust comparison divider" /></>}
             <div className="compare-map-chip modis"><i />{compareSourceA.replaceAll('_', ' ')} · {compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : compareA.state.toUpperCase()}</div><div className="compare-map-chip viirs"><i />{compareSourceB.replaceAll('_', ' ')} · {compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : compareB.state.toUpperCase()}</div>
-          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} />}
+          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={active === 'Scenario' ? scenarioWindNodes : windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} />}
           {active === 'Live Map' && liveMapDock}
+          {active === 'Scenario' && <section className="scenario-environment-panel" aria-label="Environmental inputs for the scenario">
+            <header><span><Mountain size={16} /></span><div><b>Environmental inputs</b><small>Context for this map view</small></div><span className={`scenario-context-badge ${weather ? 'available' : ''}`}>{weather ? 'LIVE' : 'NO DATA'}</span></header>
+            <div className="scenario-environment-metrics">
+              <article><Wind size={15} /><span>Wind · 10 m</span><b>{weather ? `${Math.round(weather.windSpeed)} km/h ${windDirectionLabel(directionTo ?? 0)}` : 'Unavailable'}</b><small>{weather ? `Gust ${Math.round(weather.gusts)} km/h · Open-Meteo` : 'Forecast unavailable'}</small></article>
+              <article><CloudRain size={15} /><span>Rain · selected hour</span><b>{weather ? `${weather.precipitation.toFixed(1)} mm` : 'Unavailable'}</b><small>{weather ? `${weather.time.slice(11, 16)} UTC · Open-Meteo` : 'Forecast unavailable'}</small></article>
+              <article><Activity size={15} /><span>Humidity · 2 m</span><b>{weather ? `${Math.round(weather.humidity)}%` : 'Unavailable'}</b><small>{weather ? 'Selected forecast hour' : 'Forecast unavailable'}</small></article>
+              <article><Mountain size={15} /><span>Local DEM slope</span><b>{terrainAnalysis.state === 'ready' ? `${terrainAnalysis.slopeDegrees?.toFixed(1) ?? '—'}°` : terrainAnalysis.state === 'loading' ? 'Loading' : 'Unavailable'}</b><small>Point sample · not a fuel layer</small></article>
+            </div>
+            <div className="scenario-prerequisite-state"><b>Spread model inputs</b><span><i className={weather ? 'available' : ''} /> {weather ? 'Hourly wind context available' : 'Hourly wind unavailable'}</span><span><i /> Dated incident perimeter · missing</span><span><i /> Fuel type and moisture · missing</span><span><i /> Validated behavior model · missing</span></div>
+            <button type="button" className="scenario-terrain-link" onClick={() => setActive('Terrain')}><Layers3 size={13} /> Inspect available terrain layers <ChevronRight size={13} /></button>
+          </section>}
           {active === 'Dashboard' && <section className="dashboard-map-summary" aria-labelledby="dashboard-summary-title">
             <header className="dashboard-summary-header">
               <span className="dashboard-summary-emblem"><Flame size={16} /></span>

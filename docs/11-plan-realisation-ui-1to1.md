@@ -118,3 +118,9 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Huit références sont disponibles sous `docs/ui/`; elles montrent le même thème général, mais les chiffres 2025 qu’elles contiennent sont des exemples et ne sont pas des résultats validés de l’application.
 - Le dépôt est sur `main` synchronisé avec `origin/main` au début de ce plan. `src/ui/App.tsx` contient une modification locale non publiée de logique de couverture du calendrier; elle est hors de la tranche design de ce document et doit rester isolée.
 - Les vues et le champ animé existent déjà; l’écart principal est maintenant la parité des compositions, la couverture réelle des couches et la validation de bout en bout, avec la simulation comme dépendance scientifique majeure plutôt qu’un simple dessin manquant.
+
+## Avancement — scénario et sensibilité du vent
+
+- La vue Scénario affiche maintenant à gauche les valeurs météo du forecast sélectionné (vent à 10 m, rafales, pluie horaire, humidité à 2 m) ainsi que l’échantillon de pente DEM quand le chargement est terminé. L’interface marque explicitement comme manquants le périmètre daté, le type/humidité de combustible et le modèle validé; elle n’invente pas de couloir de propagation.
+- Le curseur de vent hypothétique agit maintenant sur les vitesses des échantillons du champ de vent de la carte, en conservant les directions et le profil spatial relatif du forecast. La légende reprend ces vitesses; « Use forecast » remet le champ d’origine. Un texte explique qu’il s’agit d’une sensibilité uniforme et non d’un calcul de propagation.
+- Vérification de cette tranche : `npm run build` réussi; `git diff --check` propre. Une revue visuelle de cette nouvelle composition reste à faire sur le viewport de référence avant de la qualifier de parité 1:1.
