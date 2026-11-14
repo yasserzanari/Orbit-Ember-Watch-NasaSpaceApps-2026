@@ -105,26 +105,44 @@ function validateBbox(value) {
   return coordinates.map((number) => Number(number.toFixed(4)))
 }
 
+function shiftUtcDay(day, offset) {
+  const date = new Date(`${day}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + offset)
+  return date.toISOString().slice(0, 10)
+}
+
+function validateUtcDate(value) {
+  if (value === null) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : undefined
+}
+
 async function getFirms(requestUrl, response) {
   if (requestUrl.searchParams.has('map_key') || requestUrl.searchParams.has('key')) {
     return json(response, 400, { code: 'secret_in_query', message: 'Do not send a FIRMS key from the browser.' })
   }
-  const key = process.env.FIRMS_MAP_KEY
-  if (!key) return json(response, 503, { code: 'firms_key_missing', message: 'Configure FIRMS_MAP_KEY in the local server environment.' })
-
   const source = requestUrl.searchParams.get('source') || ''
   const bbox = validateBbox(requestUrl.searchParams.get('bbox'))
   const days = Number(requestUrl.searchParams.get('days') || 1)
+  const requestedStartDate = validateUtcDate(requestUrl.searchParams.get('date'))
   if (!allowedSources.has(source)) return json(response, 400, { code: 'invalid_source', message: 'Select a supported FIRMS MODIS or VIIRS product.' })
   if (!bbox) return json(response, 400, { code: 'invalid_bbox', message: 'Bounding box must be west,south,east,north and within valid coordinate limits.' })
   if (!Number.isInteger(days) || days < 1 || days > 5) return json(response, 400, { code: 'invalid_day_range', message: 'FIRMS area requests support 1 to 5 days.' })
+  if (requestUrl.searchParams.has('date') && requestedStartDate === undefined) return json(response, 400, { code: 'invalid_date', message: 'Date must be a valid YYYY-MM-DD UTC date.' })
+  const todayUtc = new Date().toISOString().slice(0, 10)
+  if (requestedStartDate && shiftUtcDay(requestedStartDate, days - 1) > todayUtc) return json(response, 400, { code: 'future_date_window', message: 'The selected FIRMS date window cannot extend into the future.' })
 
-  const cacheKey = JSON.stringify([source, bbox, days])
+  const key = process.env.FIRMS_MAP_KEY
+  if (!key) return json(response, 503, { code: 'firms_key_missing', message: 'Configure FIRMS_MAP_KEY in the local server environment.' })
+
+  const cacheKey = JSON.stringify([source, bbox, days, requestedStartDate])
   const cached = cache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return json(response, 200, cached.payload, { 'x-data-cache': 'hit' })
 
   const [west, south, east, north] = bbox
-  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(key)}/${source}/${west},${south},${east},${north}/${days}`
+  const datePath = requestedStartDate ? `/${requestedStartDate}` : ''
+  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(key)}/${source}/${west},${south},${east},${north}/${days}${datePath}`
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 20_000)
   try {
@@ -135,7 +153,9 @@ async function getFirms(requestUrl, response) {
     const rows = parseCsv(csv)
     if (rows.length === 0 && !/^\s*latitude\s*,/i.test(csv)) return json(response, 502, { code: 'firms_invalid_csv', message: 'NASA FIRMS returned a response without the expected CSV header.' })
     const observations = normalizeRows(rows, source)
-    const payload = { source, bbox, dayRange: days, fetchedAtUtc: new Date().toISOString(), count: observations.length, observations }
+    const queryEndDate = requestedStartDate ? shiftUtcDay(requestedStartDate, days - 1) : todayUtc
+    const queryStartDate = requestedStartDate ?? shiftUtcDay(queryEndDate, 1 - days)
+    const payload = { source, bbox, dayRange: days, queryStartDate, queryEndDate, fetchedAtUtc: new Date().toISOString(), count: observations.length, observations }
     cache.set(cacheKey, { expiresAt: Date.now() + 120_000, payload })
     if (cache.size > 128) cache.delete(cache.keys().next().value)
     return json(response, 200, payload, { 'x-data-cache': 'miss' })

@@ -17,7 +17,7 @@ The application communicates satellite thermal detections, weather observations/
 | Capability | Owner | Contract |
 |---|---|---|
 | Select/listbox | shared `Select` primitive (authored) | labels, keyboard arrows/Enter/Escape, focus return, disabled reason |
-| Date range | shared `DateRangeControl` | store UTC instants for satellite/weather data; show local zone only as secondary display |
+| FIRMS observation window | shared topbar end-date + day-range control (native date input + native select; currently rendered by `App`) | Store the selected UTC end date in URL state; request the selected 1–5 day inclusive interval ending on that date. With no explicit end date, request the latest interval. Use the server-returned query bounds as authoritative; never interpret an unrequested or failed date as a valid zero. |
 | AOI drawing | shared map interaction | keyboard alternative through coordinate/search inputs; preview geometry before apply |
 | Sensor selection | shared `SensorFilter` | each satellite separately selectable; unavailable period explains source range |
 | Chart | archived Recharts Chart Kit adapter | source and unit labels; no fixture rendered in product data views |
