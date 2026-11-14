@@ -14,4 +14,4 @@ Vérifier les classes de confiance, unités FRP et températures, valeurs invali
 
 ## Accès et statut
 
-Archives et API décrites dans le [catalogue](../02-catalogue-donnees.md). Aucun fichier acquis ni traitement exécuté. Conserver chaque plateforme et son manifeste ; vérifier les droits et l’attribution du produit retenu.
+Archives et API décrites dans le [catalogue](../02-catalogue-donnees.md). Le dépôt fournit maintenant un [importateur CSV hors ligne](../../scripts/README.md) qui conserve la plateforme, les champs natifs, le hash et les exclusions dans un manifeste/rapport QA. Aucun fichier VIIRS n’a été acquis ou traité : le schéma, la version et les règles doivent être confirmés sur un CSV du produit réellement retenu. Vérifier les droits et l’attribution avant de publier l’archive.

@@ -53,6 +53,8 @@ FIRMS propose des archives en CSV, JSON et Shapefile avec authentification. Son 
 - Si les dates ou colonnes ne correspondent pas au manifeste, mettre le fichier en quarantaine et produire un diagnostic, plutôt que poursuivre silencieusement.
 - Pour API Area, séparer erreur réseau, réponse non autorisée, réponse vide valide et réponse mal formée. Aucun jeton ou MAP_KEY ne passe au navigateur, au rapport ou aux logs.
 
+Le premier importateur est disponible dans [`scripts/ingest-firms-archive.mjs`](../scripts/ingest-firms-archive.mjs). Il travaille hors ligne sur un CSV non compressé choisi par l’analyste; ne télécharge pas l’archive et ne réclame pas de secret. Il copie l’entrée brute sous `data/private/firms/`, écrit une normalisation JSONL avec colonnes natives, un manifeste et un rapport d’exclusions. Une période attendue facultative protège contre un bundle inattendu. La clé d’agrégation historique et le dénominateur de couverture restent hors de ce premier import; une absence de hotspot ne produit donc pas de zéro journalier.
+
 ## 4. Pipeline de données
 
 ```text

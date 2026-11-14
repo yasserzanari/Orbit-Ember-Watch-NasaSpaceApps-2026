@@ -8,6 +8,7 @@
     "dev:api": "node server/index.mjs",
     "dev:web": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
+    "data:firms:ingest": "node scripts/ingest-firms-archive.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node server/index.mjs"
   },
