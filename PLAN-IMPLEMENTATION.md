@@ -16,6 +16,8 @@ Le résultat doit satisfaire deux niveaux sans les confondre : le **cœur du dé
 
 La route est volontairement bloquée par ses dépendances : acquisition historique → schéma et QA par produit → agrégats séparés → test de comparaison → référence saisonnière/anomalies → visualisations. Les sources NRT servent à montrer les nouveautés; elles ne sont pas la base silencieuse d’une climatologie. Pour l’historique, chaque produit, satellite, collection et mode SP/NRT garde son identité. L’API Area FIRMS accepte une période de 1 à 5 jours et une date, et expose une route d’`data_availability`; elle convient aux requêtes bornées, mais une série de vingt ans ne doit pas être chargée en boucles synchrones depuis le navigateur. Il faut un import batch versionné, avec un manifeste, puis servir à l’UI des agrégats reproductibles. Voir [l’API Area FIRMS](https://firms.modaps.eosdis.nasa.gov/api/area) et [l’index des APIs FIRMS](https://firms.modaps.eosdis.nasa.gov/api/).
 
+Le calendrier propose aussi un **échantillon historique contextuel CWFIS Fire M3**, demandé séparément de FIRMS et affiché dans une vue commutable compacte. Il conserve la source, le capteur, le satellite et l’agence de chaque ligne; il ne sert ni de mesure FIRMS, ni de validation du périmètre Pembina, ni de preuve de couverture les jours sans résultat. L’endpoint est borné à 31 jours, 20 degrés carrés et 20 000 lignes. Les historiques MODIS/VIIRS comparables du défi restent dépendants des archives NASA FIRMS vérifiées par manifeste.
+
 ### Plan concret, dépendances et preuve de sortie
 
 | Ordre | Livraison | Travail concret | Preuve de sortie |

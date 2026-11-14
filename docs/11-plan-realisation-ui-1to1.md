@@ -144,3 +144,9 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - La capture Scenario décodée et CRC-validée montrait la légende de vitesse au centre de la carte, partiellement cachée par le dock « Environmental inputs ». Le dock Terrain a la même implantation à gauche.
 - Le workspace Scenario reçoit maintenant une classe dédiée et les légendes Scenario/Terrain sont ancrées à droite de la carte, dans la zone libre; les règles de tablette et mobile ont des largeurs adaptées. Live Map conserve son ancrage après le dock gauche.
 - Vérification : build TypeScript/Vite et `git diff --check` réussis. Je n’ai pas généré de nouvelle capture : les tentatives Chrome de cette session échouent au démarrage du processus GPU.
+
+## Avancement — contexte historique CWFIS dans Calendar
+
+- Calendar propose une vue commutable « Historical sample » dans son panneau inférieur existant : elle ne crée pas de nouvelle rangée de grille, ne réduit pas la carte et garde les limites de couverture visibles. L’échantillon Alberta west du 4 au 20 mai 2023 provient du WFS Fire M3 officiel et sépare les lignes par capteur/source; la provenance source, satellite et agence reste affichée.
+- Le serveur borne les requêtes à 31 jours, 20 degrés carrés, 20 000 lignes et 12 MB, valide les coordonnées et les dates retournées, annonce les correspondances/troncatures et garde un cache court. Les états d’absence ne sont pas convertis en couverture zéro. Le panneau précise que CWFIS est composite et distinct de FIRMS; aucune correspondance au périmètre d’incident n’est revendiquée.
+- Vérification : requête réelle WFS retournée en HTTP 200 (15 457 lignes correspondantes pour l’échantillon), réponse du proxy testée en HTTP 200 avec source/satellite/agence et `coverageState: unknown`, validation d’une plage trop large en HTTP 400; build TypeScript/Vite et `git diff --check` réussis. Pas de nouvelle capture Chrome dans cette tranche.

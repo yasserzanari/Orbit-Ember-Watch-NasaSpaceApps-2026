@@ -34,6 +34,7 @@ const publicNrtFeeds = new Map([
 ])
 const cache = new Map()
 const publicFeedCache = new Map()
+const cwfisCache = new Map()
 let availabilityCache = null
 
 function loadLocalEnv() {
@@ -556,6 +557,74 @@ async function getFirmsArchiveCatalog(response) {
   return json(response, 200, { generatedAtUtc: new Date().toISOString(), archives, invalidManifestCount, truncated: names.filter((name) => name.endsWith('.manifest.json')).length > 500 })
 }
 
+async function getCwfisHotspots(requestUrl, response) {
+  const bbox = validateBbox(requestUrl.searchParams.get('bbox'))
+  const startDate = validateUtcDate(requestUrl.searchParams.get('start'))
+  const endDate = validateUtcDate(requestUrl.searchParams.get('end'))
+  if (!bbox) return json(response, 400, { code: 'invalid_bbox', message: 'Bounding box must be west,south,east,north and within valid coordinate limits.' })
+  if (!startDate || !endDate || startDate > endDate) return json(response, 400, { code: 'invalid_date_range', message: 'Provide a valid UTC start and end date in YYYY-MM-DD format.' })
+  if (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`) > 30 * 86400_000) return json(response, 400, { code: 'date_range_too_wide', message: 'CWFIS historical requests are limited to 31 calendar days.' })
+  const [west, south, east, north] = bbox
+  if ((east - west) * (north - south) > 20) return json(response, 400, { code: 'bbox_too_wide', message: 'CWFIS historical requests are limited to 20 square degrees.' })
+  const cacheKey = JSON.stringify([bbox, startDate, endDate])
+  const cached = cwfisCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return json(response, 200, cached.payload, { 'x-data-cache': 'hit' })
+
+  const filter = `rep_date >= '${startDate}T00:00:00Z' AND rep_date <= '${endDate}T23:59:59Z' AND lat >= ${south} AND lat <= ${north} AND lon >= ${west} AND lon <= ${east}`
+  const params = new URLSearchParams({
+    service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: 'public:hotspots',
+    outputFormat: 'json', maxFeatures: '20000',
+    propertyName: 'lat,lon,rep_date,source,sensor,satellite,agency,uid',
+    CQL_FILTER: filter,
+  })
+  const sourceUrl = `https://cwfis.cfs.nrcan.gc.ca/geoserver/ows?${params}`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 30_000)
+  try {
+    const upstream = await fetch(sourceUrl, { signal: controller.signal, headers: { accept: 'application/json' } })
+    if (!upstream.ok) return json(response, 502, { code: 'cwfis_upstream_error', message: `CWFIS historical hotspots returned HTTP ${upstream.status}.` })
+    const raw = await upstream.text()
+    if (Buffer.byteLength(raw) > 12 * 1024 * 1024) return json(response, 502, { code: 'cwfis_response_too_large', message: 'CWFIS response exceeded the 12 MB request limit; narrow the date window or area.' })
+    let collection
+    try { collection = JSON.parse(raw) } catch { return json(response, 502, { code: 'cwfis_invalid_response', message: 'CWFIS did not return the expected GeoJSON response.' }) }
+    if (!Array.isArray(collection.features)) return json(response, 502, { code: 'cwfis_invalid_response', message: 'CWFIS response did not include a feature collection.' })
+    const observations = collection.features.flatMap((feature) => {
+      const properties = feature.properties || {}
+      const latitude = numberOrNull(properties.lat)
+      const longitude = numberOrNull(properties.lon)
+      const acquiredAtUtc = typeof properties.rep_date === 'string' ? properties.rep_date : null
+      const acquiredDate = acquiredAtUtc?.slice(0, 10)
+      if (latitude === null || longitude === null || !acquiredDate || acquiredDate < startDate || acquiredDate > endDate || longitude < west || longitude > east || latitude < south || latitude > north) return []
+      return [{
+        id: String(properties.uid ?? feature.id ?? `${acquiredAtUtc}:${latitude}:${longitude}`),
+        latitude, longitude, acquiredAtUtc,
+        source: String(properties.source ?? 'unknown'),
+        sensor: String(properties.sensor ?? 'unknown'),
+        satellite: String(properties.satellite ?? 'unknown'),
+        agency: String(properties.agency ?? 'unknown'),
+      }]
+    })
+    const totalFeatures = Number(collection.numberMatched ?? collection.totalFeatures)
+    const matchedCount = Number.isFinite(totalFeatures) ? totalFeatures : observations.length
+    const numberReturned = Number(collection.numberReturned)
+    const payload = {
+      dataset: 'CWFIS Fire M3 hotspots', bbox, queryStartDate: startDate, queryEndDate: endDate,
+      fetchedAtUtc: new Date().toISOString(), matchedCount,
+      count: observations.length, truncated: matchedCount > observations.length || (Number.isFinite(numberReturned) && numberReturned >= 20_000),
+      coverageState: 'unknown', sourceUrl: 'https://cwfis.cfs.nrcan.gc.ca/geoserver/ows', observations,
+      coverageCaveat: 'Contextual mixed-source hotspot detections. Source, sensor and satellite are retained per row. No returned row is not evidence of no fire; this dataset is not raw FIRMS or independent fire-perimeter validation.',
+    }
+    cwfisCache.set(cacheKey, { expiresAt: Date.now() + 15 * 60_000, payload })
+    if (cwfisCache.size > 64) cwfisCache.delete(cwfisCache.keys().next().value)
+    return json(response, 200, payload, { 'x-data-cache': 'miss' })
+  } catch (error) {
+    const timedOut = error?.name === 'AbortError'
+    return json(response, 502, { code: timedOut ? 'cwfis_timeout' : 'cwfis_network_error', message: timedOut ? 'CWFIS historical hotspots did not answer before the 30 second timeout.' : 'Could not reach CWFIS historical hotspots.' })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 const mimeTypes = new Map([
   ['.html', 'text/html; charset=utf-8'], ['.js', 'text/javascript; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'], ['.json', 'application/json; charset=utf-8'],
@@ -603,6 +672,10 @@ const server = createServer(async (request, response) => {
   if (url.pathname === '/api/firms/archive-catalog') {
     if (request.method !== 'GET') return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET' })
     return getFirmsArchiveCatalog(response)
+  }
+  if (url.pathname === '/api/cwfis/hotspots') {
+    if (request.method !== 'GET') return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET' })
+    return getCwfisHotspots(url, response)
   }
   if (url.pathname.startsWith('/api/')) return json(response, 404, { code: 'not_found' })
   if (!['GET', 'HEAD'].includes(request.method || '')) return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET, HEAD' })

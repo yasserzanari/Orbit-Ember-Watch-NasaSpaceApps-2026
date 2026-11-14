@@ -19,6 +19,20 @@ curl 'http://localhost:4174/api/firms?source=VIIRS_NOAA20_NRT&bbox=-115.5938,52.
 3. **Relier au contexte.** Dans Live Map, activer les couches de vent et de relief; préciser que le vent vient d’Open‑Meteo et ne prédit pas la propagation du feu.
 4. **Montrer la traçabilité.** Dans Data & Sources, distinguer les flux NRT de sept jours des archives historiques. Une disponibilité globale ne prouve pas la couverture d’un pixel.
 
+## Volet historique contextuel sans clé
+
+Dans **Calendar**, charger **Alberta west · May 4–20, 2023**. Cette fenêtre régionale proche du cas Pembina permet de montrer les séries quotidiennes séparées par étiquette de capteur et de source, avec le décompte des sources présentes dans les lignes retournées. La requête utilise l’API WFS officielle CWFIS `public:hotspots`; le flux Fire M3 réunit plusieurs fournisseurs et ses lignes conservent `source`, `sensor`, `satellite` et `agency`.
+
+Présenter cette carte comme **contexte régional historique CWFIS** : son emprise contient des détections de la région et ne relie pas chaque détection à EWF031/Pembina. Elle n’est ni une archive NASA FIRMS brute ni une vérité terrain de périmètre. Les jours sans ligne ont une couverture inconnue. Les métadonnées CWFIS décrivent un produit hotspot composite comportant des sources NASA, USFS et plusieurs instruments; la provenance de chaque ligne reste affichée dans le panneau. [CWFIS Fire M3 — métadonnées](https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/archive/fireM3_hotspots_metadata_NAP_ISO_19115_2003.pdf), [attributs du jeu de données](https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/fireM3_hotspots_metadata_attributes_EN_FR.pdf).
+
+L’endpoint de ce panneau est distinct de `/api/firms` :
+
+```sh
+curl 'http://localhost:4174/api/cwfis/hotspots?bbox=-116.2,52.9,-115.1,53.5&start=2023-05-04&end=2023-05-20'
+```
+
+Il limite une requête à 31 jours et 20 degrés carrés, retourne jusqu’à 20 000 lignes et annonce la troncature lorsque le serveur amont en retourne davantage. Pour produire des comparaisons ou des tendances de saison validées, il faut encore importer les CSV standard FIRMS correspondants et une référence de périmètre indépendante.
+
 ## Message scientifique
 
 Orbit Ember Watch aide à explorer et comparer des détections MODIS et VIIRS sans confondre leurs résolutions, leurs confidences natives ou leurs limites d’observation. La vue NRT prouve le parcours cartographique et la comparaison récente. Une calibration historique, une référence saisonnière et une mesure de couverture restent à valider avant d’afficher une série harmonisée ou un score d’accord.

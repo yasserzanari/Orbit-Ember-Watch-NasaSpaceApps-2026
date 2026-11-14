@@ -1073,6 +1073,52 @@ function shiftUtcMonth(month: string, offset: number) {
   return date.toISOString().slice(0, 7)
 }
 
+function CwfisHistoricalPilot() {
+  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [observations, setObservations] = useState<{ id: string; acquiredAtUtc: string; sensor: string; satellite: string; source: string; agency: string }[]>([])
+  const [message, setMessage] = useState('')
+  const load = async () => {
+    setState('loading'); setMessage('')
+    const params = new URLSearchParams({ bbox: '-116.2,52.9,-115.1,53.5', start: '2023-05-04', end: '2023-05-20' })
+    try {
+      const response = await fetch(`/api/cwfis/hotspots?${params}`)
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.message || 'CWFIS historical context could not be loaded.')
+      setObservations(Array.isArray(payload.observations) ? payload.observations : [])
+      setState('ready')
+    } catch (error) {
+      setState('error'); setMessage(error instanceof Error ? error.message : 'CWFIS historical context could not be loaded.')
+    }
+  }
+  const days = Array.from({ length: 17 }, (_, index) => shiftUtcDay('2023-05-04', index))
+  const series = observations.reduce<Record<string, Record<string, number>>>((result, row) => {
+    const family = `${row.sensor} · ${row.source}`
+    const day = row.acquiredAtUtc.slice(0, 10)
+    result[family] ??= {}
+    result[family][day] = (result[family][day] ?? 0) + 1
+    return result
+  }, {})
+  const sourceCounts = observations.reduce<Record<string, number>>((result, row) => { result[row.source] = (result[row.source] ?? 0) + 1; return result }, {})
+  const satelliteCounts = observations.reduce<Record<string, number>>((result, row) => { result[row.satellite] = (result[row.satellite] ?? 0) + 1; return result }, {})
+  const agencyCounts = observations.reduce<Record<string, number>>((result, row) => { result[row.agency] = (result[row.agency] ?? 0) + 1; return result }, {})
+  const seriesRows = Object.entries(series).map(([name, values]) => ({ name, values, total: Object.values(values).reduce((sum, count) => sum + count, 0) })).sort((a, b) => b.total - a.total)
+  const max = Math.max(1, ...seriesRows.flatMap((row) => Object.values(row.values)))
+  return <section className="cwfis-pilot-panel" aria-label="CWFIS historical regional context">
+    <header><div><span className="cwfis-kicker"><Database size={13} /> HISTORICAL CONTEXT · PUBLIC WFS</span><h2>Alberta west · May 4–20, 2023</h2><p>Regional hotspot sample near the Pembina Complex origin area · not a fire-specific perimeter match</p></div><button className="dashboard-load-button" onClick={() => void load()} disabled={state === 'loading'}>{state === 'loading' ? 'Loading CWFIS…' : state === 'ready' ? 'Refresh history' : 'Load historical context'}</button></header>
+    <div className="cwfis-provenance-note"><AlertTriangle size={14} /><span>CWFIS Fire M3 is a mixed-source contextual dataset, not raw NASA FIRMS or independent fire-perimeter truth. Missing dates have unknown coverage; counts are returned detection rows, not fire counts.</span></div>
+    {state === 'error' && <p className="cwfis-error">{message}</p>}
+    {state === 'ready' && <>
+      <div className="cwfis-pilot-summary"><b>{observations.length.toLocaleString()}</b><span>returned rows</span><b>{Object.keys(sourceCounts).length}</b><span>source labels</span><small>May 4–20 UTC · 52.9–53.5°N, 116.2–115.1°W</small></div>
+      <div className="cwfis-series" aria-label="Daily CWFIS hotspot rows grouped by sensor and source label">{seriesRows.map(({ name, values }) => <div className={`cwfis-series-row ${name.toUpperCase().startsWith('MODIS') ? 'modis' : name.toUpperCase().startsWith('VIIRS') ? 'viirs' : ''}`} key={name}><b>{name}</b><div>{days.map((day) => { const count = values[day] ?? 0; return <i key={day} title={`${day} UTC · ${count ? `${count.toLocaleString()} rows` : 'no returned rows; coverage unknown'}`} style={{ height: `${count ? Math.max(4, count / max * 54) : 2}px` }} /> })}</div><small className="cwfis-series-total">{seriesRows.find((row) => row.name === name)?.total.toLocaleString()}</small></div>)}</div>
+      <div className="cwfis-day-labels">{days.map((day) => <span key={day}>{day.slice(8)}</span>)}</div>
+      <div className="cwfis-source-list"><b>Source provenance</b>{Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]).map(([source, count]) => <span key={source}>{source} <strong>{count.toLocaleString()}</strong></span>)}</div>
+      <div className="cwfis-source-list"><b>Satellites / agencies</b>{Object.entries(satelliteCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([satellite, count]) => <span key={satellite}>{satellite} <strong>{count.toLocaleString()}</strong></span>)}{Object.keys(agencyCounts).sort().map((agency) => <span key={agency}>Agency {agency}</span>)}</div>
+      <small className="cwfis-source-citation">Source: <a href="https://cwfis.cfs.nrcan.gc.ca/geoserver/ows" target="_blank" rel="noreferrer">Canadian Wildland Fire Information System · Fire M3 WFS</a></small>
+    </>}
+    {state === 'idle' && <small className="cwfis-idle">Load this short historical window to explore separate MODIS and VIIRS daily records.</small>}
+  </section>
+}
+
 function CalendarBoard({ observations, observationState, days, selectedDate, onSelectDate, windowStart, windowEnd, coverageUnknown, unknownBeforeDate, unknownAfterDate }: { observations: FireObservation[]; observationState: 'idle' | 'loading' | 'ready' | 'error'; days: number; selectedDate: string; onSelectDate: (date: string) => void; windowStart: string; windowEnd: string; coverageUnknown: boolean; unknownBeforeDate: string | null; unknownAfterDate: string | null }) {
   const counts = new globalThis.Map<string, number>()
   for (const observation of observations) {
@@ -1105,13 +1151,15 @@ function CalendarBoard({ observations, observationState, days, selectedDate, onS
   const weekStart = mondayOfUtcWeek(selectedDate)
   const shownCells = cells.filter((cell) => cell.iso >= weekStart && cell.iso < shiftUtcDay(weekStart, 7))
   const [mode, setMode] = useState<'month' | 'week'>('month')
+  const [historicalContextOpen, setHistoricalContextOpen] = useState(false)
   const rendered = mode === 'month' ? cells : shownCells
   const weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 
-  return <section className="calendar-board" aria-label="FIRMS observation calendar">
-    <header className="calendar-board-heading"><div><CalendarDays size={17} /><div><b>Activity Calendar — {monthDate.toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'long', year: 'numeric' })}</b><small>{observationState === 'ready' ? `Observed records · ${days} UTC ${days === 1 ? 'day' : 'days'} · ${windowStart} to ${windowEnd}` : observationState === 'loading' ? 'Loading the selected NASA FIRMS window' : observationState === 'error' ? 'Selected FIRMS window is unavailable' : 'Load observations to populate queried dates'}</small></div></div><div className="calendar-board-actions"><div className="calendar-month-nav"><button aria-label="Previous month" title="Previous month" onClick={() => setMonth((value) => shiftUtcMonth(value, -1))}><ChevronLeft size={13} /></button><button aria-label="Next month" title="Next month" onClick={() => setMonth((value) => shiftUtcMonth(value, 1))}><ChevronRight size={13} /></button></div><div className="calendar-mode-toggle"><button className={mode === 'month' ? 'selected' : ''} onClick={() => setMode('month')} aria-pressed={mode === 'month'}>Month</button><button className={mode === 'week' ? 'selected' : ''} onClick={() => setMode('week')} aria-pressed={mode === 'week'}>Week</button></div></div></header>
+  return <section className={`calendar-board ${historicalContextOpen ? 'cwfis-open' : ''}`} aria-label="FIRMS observation calendar">
+    <header className="calendar-board-heading"><div><CalendarDays size={17} /><div><b>Activity Calendar — {monthDate.toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'long', year: 'numeric' })}</b><small>{observationState === 'ready' ? `Observed records · ${days} UTC ${days === 1 ? 'day' : 'days'} · ${windowStart} to ${windowEnd}` : observationState === 'loading' ? 'Loading the selected NASA FIRMS window' : observationState === 'error' ? 'Selected FIRMS window is unavailable' : 'Load observations to populate queried dates'}</small></div></div><div className="calendar-board-actions"><button className={`calendar-history-toggle ${historicalContextOpen ? 'selected' : ''}`} onClick={() => setHistoricalContextOpen((value) => !value)} aria-pressed={historicalContextOpen}>{historicalContextOpen ? 'Return to calendar' : 'Historical sample'}</button><div className="calendar-month-nav"><button aria-label="Previous month" title="Previous month" onClick={() => setMonth((value) => shiftUtcMonth(value, -1))}><ChevronLeft size={13} /></button><button aria-label="Next month" title="Next month" onClick={() => setMonth((value) => shiftUtcMonth(value, 1))}><ChevronRight size={13} /></button></div><div className="calendar-mode-toggle"><button className={mode === 'month' ? 'selected' : ''} onClick={() => setMode('month')} aria-pressed={mode === 'month'}>Month</button><button className={mode === 'week' ? 'selected' : ''} onClick={() => setMode('week')} aria-pressed={mode === 'week'}>Week</button></div></div></header>
     <div className="calendar-grid-wrap"><div className="calendar-weekdays">{weekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}</div><div className={`calendar-grid ${mode === 'week' ? 'week-mode' : ''}`}>{rendered.map((cell) => <button key={cell.iso} className={`calendar-day ${cell.iso === selectedDate ? 'selected' : ''} ${cell.iso.slice(0, 7) !== month ? 'adjacent-month' : ''} ${cell.state} ${cell.state === 'covered' && (cell.count ?? 0) === 0 ? 'zero-records' : ''}`} onClick={() => onSelectDate(cell.iso)} disabled={cell.state === 'future-date'} title={`${cell.iso} UTC · ${cell.label}`} aria-label={`${cell.iso}, ${cell.label}`} aria-pressed={cell.iso === selectedDate}><span>{cell.date.getUTCDate()}</span>{cell.state === 'covered' ? <b style={{ '--activity': String((cell.count ?? 0) / maximum) } as CSSProperties}>{(cell.count ?? 0).toLocaleString()}</b> : cell.state === 'loading' ? <i className="calendar-loading-dot" /> : <small>{cell.state === 'outside-window' ? '—' : cell.state === 'error' ? '!' : cell.state === 'unknown-coverage' ? '?' : '·'}</small>}</button>)}</div></div>
     <aside className="calendar-legend"><span><i className="calendar-legend-count" /> Dates with returned rows</span>{!coverageUnknown && !unknownBeforeDate && !unknownAfterDate && <span><i className="calendar-legend-empty" /> Queried, no records</span>}{(coverageUnknown || unknownBeforeDate || unknownAfterDate) && <span><i className="calendar-legend-unknown" /> {coverageUnknown ? 'No archive rows · coverage unknown' : 'Dates outside public feed window · status unknown'}</span>}<span><i className="calendar-legend-unknown" /> Not queried / unavailable</span></aside>
+    {historicalContextOpen && <CwfisHistoricalPilot />}
   </section>
 }
 
