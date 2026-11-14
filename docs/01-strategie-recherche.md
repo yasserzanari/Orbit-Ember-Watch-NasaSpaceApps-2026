@@ -15,7 +15,9 @@ Choisir un cas régional pour lequel une comparaison des capteurs est utile et v
 
 ## Sélection d’une région
 
-Évaluer chaque candidate selon la disponibilité des deux capteurs, le nombre d’années complètes, l’existence d’une référence locale indépendante et le volume compatible avec le temps du hackathon. Le Québec en 2023 est une piste, pas encore un cas choisi. Une région de brûlage agricole est aussi possible, avec une interprétation spécifique.
+Évaluer chaque candidate selon la disponibilité des deux capteurs, le nombre d’années complètes, l’existence d’une référence locale indépendante et le volume compatible avec le temps du hackathon. **Alberta 2023 est le pilote proposé**, car la province publie un registre historique ouvert et le CNFDB fournit points et périmètres d’agences; le feu et son polygone exact restent à confirmer. Le Québec ou un cas de brûlage agricole ne seront ajoutés que si la première acquisition révèle une lacune importante.
+
+Pour le premier test, garder MODIS et VIIRS S‑NPP standards sur leur recouvrement depuis 2012 et réserver au moins une saison complète pour le test temporel. Traiter NOAA‑20 séparément comme série secondaire; ne pas fusionner les satellites ni supposer que NOAA‑21 est disponible pour toute la fenêtre retenue. La liste des produits et plages de dates doit être confirmée avec la disponibilité FIRMS et les CSV réellement livrés.
 
 ## Questions à résoudre
 

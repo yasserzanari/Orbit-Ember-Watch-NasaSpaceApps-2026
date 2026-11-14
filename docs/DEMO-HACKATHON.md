@@ -26,6 +26,7 @@ Orbit Ember Watch aide à explorer et comparer des détections MODIS et VIIRS sa
 ## Conditions et limites
 
 - Les CSV publics utilisés sans clé couvrent seulement les sept derniers jours au Canada. Une fenêtre historique ne fonctionne sans clé que si une archive locale correspondante a été importée et acceptée; sinon elle requiert `FIRMS_MAP_KEY` côté serveur. Une archive peut être partielle : couverture inconnue.
+- Une requête qui chevauche le début de la fenêtre publique retourne les lignes NRT disponibles dans la partie récente; les dates antérieures sont marquées comme hors fenêtre et restent inconnues.
 - Aucune ligne retournée ne signifie pas absence de feu. Le flux FIRMS n’est pas un dénominateur de couverture.
 - Les résultats sont des détections NRT; ils ne remplacent pas un historique standard science-quality.
 - Le scénario ne produit pas de prévision opérationnelle de propagation.

@@ -1,8 +1,22 @@
 # 04 Cas d’étude
 
-## Cas pilote à choisir
+## Cas pilote proposé : Alberta, saison 2023
 
-Retenir une région qui dispose des deux capteurs et d’une référence indépendante datée. Le Québec en 2023 est une piste de recherche ; aucune emprise ni donnée n’a encore été retenue. Appliquer les critères de la [stratégie](01-strategie-recherche.md).
+**Utilisateur visé :** analyste régional des feux ou chercheur qui doit examiner les périodes d’activité observée et les limites de comparaison entre capteurs. Ce pilote ne constitue pas un outil de décision tactique.
+
+**Question :** comment les séries de détections MODIS Terra/Aqua et VIIRS S‑NPP se comportent-elles pendant la saison albertaine 2023, et qu’est-ce qui change lorsqu’on garde les produits et plateformes séparés ? La saison 2023 est un cas de forte activité documenté par l’Alberta et le gouvernement canadien; elle ne suffit pas à elle seule à définir une anomalie statistique.
+
+**Ancrage événementiel à vérifier :** le jeu provincial *Historical wildfire data: 2006–2025* contient l’incident EWF031, Pembina Complex, avec point d’origine 53.145183° N, 115.686783° W, début déclaré le 4 mai 2023, cause « Lightning » et superficie finale 201 913 ha. Le point et la superficie finale ne sont ni un périmètre journalier ni la vérité terrain de chaque détection FIRMS. Confirmer dans le dictionnaire la référence temporelle avant toute conversion à UTC.
+
+**Fenêtre et emprise :** retenir le feu après avoir vérifié son polygone dans les données CNFDB/CWFIS; demander une emprise issue de ce polygone et une marge documentée. Commencer par une fenêtre événementielle courte autour des dates de départ rapportées, puis utiliser la saison entière seulement pour le calendrier régional. Ne pas prendre la boîte autour d’Edmonton comme substitut au polygone du feu.
+
+**Produits à acquérir :** MODIS C6.1 standard séparé par Terra/Aqua et VIIRS S‑NPP standard; examiner NOAA‑20 comme série supplémentaire si la fenêtre de recouvrement et les fichiers reçus sont conformes. Garder NOAA‑21 hors du pilote tant que la disponibilité du produit standard retenu n’est pas confirmée pour toute la période. L’archive FIRMS accepte une demande CSV par courriel; aucune `FIRMS_MAP_KEY` n’est requise pour cette voie, mais il faut encore obtenir et importer les fichiers.
+
+**Référence indépendante :** confronter les dates et l’existence de l’incident aux points de feux fournis par les agences via le CNFDB, puis son périmètre final lorsqu’il existe. Cette référence contextualise l’incident; elle ne valide pas chaque point FIRMS ni les heures de détection. Le CNFDB indique que complétude et qualité varient selon les agences et les années.
+
+**État :** cas d’étude proposé, fichiers FIRMS historiques non importés et polygone du pilote non confirmé. Tant que ces dépendances ne sont pas réglées, la démonstration logicielle reste le flux NRT récent à Edmonton; aucune calibration, anomalie saisonnière ou validation historique n’est revendiquée.
+
+Sources : [données historiques de feux de l’Alberta](https://open.alberta.ca/dataset/a221e7a0-4f46-4be7-9c5a-e29de9a3447e/resource/80480824-0c50-456c-9723-f9d4fc136141/download/fp-historical-wildfire-data-2006-2025.csv), [dictionnaire provincial](https://open.alberta.ca/dataset/a221e7a0-4f46-4be7-9c5a-e29de9a3447e/resource/1b635b8b-a937-4be4-857e-8aeef77365d2/download/fp-historical-wildfire-data-dictionary-2006-2023.pdf), [historique des feux CWFIS/CNFDB](https://cwfis.cfs.nrcan.gc.ca/en/fire-history), [archive FIRMS](https://firms.modaps.eosdis.nasa.gov/download/), [couverture VIIRS FIRMS](https://firms.modaps.eosdis.nasa.gov/content/descriptions/FIRMS_VIIRS_Firehotspots.html).
 
 ## Scénarios de démonstration
 
