@@ -662,3 +662,17 @@
   .live-timeline-empty { font-size: 8px; }
   .live-all-dates { grid-column: 2; grid-row: 2; min-width: 0; font-size: 7px; }
 }
+
+/* Keep the wind scale in the uncovered map area above the field briefing sheet. */
+@media (max-width: 760px) {
+  .field-situation-workspace .map-frame:has(.wind-speed-legend) .wind-speed-legend {
+    top: auto;
+    right: 8px;
+    bottom: calc(52dvh + 45px);
+    left: 8px;
+    width: auto;
+    padding: 6px 8px 5px;
+  }
+  .field-situation-workspace .map-frame:has(.wind-speed-legend) .wind-speed-legend>small { display: none; }
+  .field-situation-workspace .map-frame:has(.wind-speed-legend) .map-field-badge { top: 48px; right: auto; bottom: auto; left: 8px; }
+}

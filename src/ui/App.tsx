@@ -71,6 +71,15 @@ type FirmsCoverage = { product: string; minDate: string; maxDate: string }
 type FirmsCoverageState = { status: 'idle' | 'loading' | 'ready' | 'error' | 'key-missing'; products: FirmsCoverage[]; fetchedAtUtc: string | null; message: string }
 type FirmsArchive = { importId: string; product: string; sourceFile: string; sourceRetrievedAtUtc: string | null; minDateUtc: string; maxDateUtc: string; rowsRead: number; rowsAccepted: number; rowsRejected: number; rowsDuplicate: number; sourceSha256: string; qaStatus: string; warnings: string[] }
 type FirmsArchiveState = { status: 'idle' | 'loading' | 'ready' | 'error'; archives: FirmsArchive[]; invalidManifestCount: number; truncated: boolean; message: string }
+type FirmsLocalImport = { importId: string; product: string; sourceFile: string; sourceUrl: string | null; sourceRetrievedAtUtc: string | null; observedStartDate: string; observedEndDate: string; rowsAccepted: number; rowsRejected: number; rowsDuplicate: number; sourceSha256: string }
+const publicNrtProducts = new Set(['MODIS_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT'])
+
+function firmsAccessLabel(accessMode: string | null) {
+  if (accessMode === 'public-nrt-canada-csv') return 'public Canada NRT feed · latest 7 days'
+  if (accessMode === 'map-key-area-api') return 'NASA FIRMS area API · server key'
+  if (accessMode === 'local-validated-archive') return 'QA-accepted local archive · coverage unknown'
+  return 'access method unavailable'
+}
 
 function useFirmsCoverage(enabled: boolean) {
   const [coverage, setCoverage] = useState<FirmsCoverageState>({ status: 'idle', products: [], fetchedAtUtc: null, message: '' })
@@ -137,8 +146,10 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
   const [queryRange, setQueryRange] = useState<{ start: string; end: string } | null>(null)
   const [configured, setConfigured] = useState<boolean | null>(null)
   const [publicNrtSupported, setPublicNrtSupported] = useState(false)
-  const [accessMode, setAccessMode] = useState<'public-nrt-canada-csv' | 'map-key-area-api' | null>(null)
+  const [accessMode, setAccessMode] = useState<'public-nrt-canada-csv' | 'map-key-area-api' | 'local-validated-archive' | null>(null)
+  const [archiveImports, setArchiveImports] = useState<FirmsLocalImport[]>([])
   const requestController = useRef<AbortController | null>(null)
+  const publicFeedAvailable = publicNrtSupported && publicNrtProducts.has(source)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -148,7 +159,7 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
 
   useEffect(() => {
     requestController.current?.abort()
-    setState('idle'); setMessage(''); setObservations([]); setFetchedAt(null); setQueryRange(null); setAccessMode(null)
+    setState('idle'); setMessage(''); setObservations([]); setFetchedAt(null); setQueryRange(null); setAccessMode(null); setArchiveImports([])
     return () => requestController.current?.abort()
   }, [lat, lon, source, days])
 
@@ -164,18 +175,24 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
     requestController.current?.abort()
     const controller = new AbortController()
     requestController.current = controller
-    setState('loading'); setMessage('')
+    setState('loading'); setMessage(''); setAccessMode(null); setArchiveImports([])
     try {
       const response = await fetch(`/api/firms?${params}`, { signal: controller.signal })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.message || 'FIRMS observations could not be loaded.')
       setObservations(Array.isArray(payload.observations) ? payload.observations : [])
       setFetchedAt(payload.fetchedAtUtc || null)
-      setAccessMode(payload.accessMode === 'public-nrt-canada-csv' || payload.accessMode === 'map-key-area-api' ? payload.accessMode : null)
+      const nextAccessMode = payload.accessMode === 'public-nrt-canada-csv' || payload.accessMode === 'map-key-area-api' || payload.accessMode === 'local-validated-archive' ? payload.accessMode : null
+      setAccessMode(nextAccessMode)
+      const importedSources = Array.isArray(payload.imports) ? payload.imports as FirmsLocalImport[] : []
+      setArchiveImports(importedSources)
       setQueryRange(typeof payload.queryStartDate === 'string' && typeof payload.queryEndDate === 'string'
         ? { start: payload.queryStartDate, end: payload.queryEndDate }
         : null)
-      setMessage(payload.count === 0 ? 'NASA returned a valid response with no detections in this area and time window. This does not establish that no fire is present.' : `${payload.count.toLocaleString()} satellite detections returned for the selected product and window.`)
+      const count = Number.isSafeInteger(payload.count) && payload.count >= 0 ? payload.count : (Array.isArray(payload.observations) ? payload.observations.length : 0)
+      setMessage(nextAccessMode === 'local-validated-archive'
+        ? count === 0 ? 'The accepted local import returned no detection rows for this area and time window. Coverage is unknown; this does not establish that no fire is present.' : `${count.toLocaleString()} rows returned from ${importedSources.length} QA-accepted local import(s). Observation coverage remains unknown.`
+        : count === 0 ? 'NASA returned a valid response with no detections in this area and time window. This does not establish that no fire is present.' : `${count.toLocaleString()} satellite detections returned for the selected product and window.`)
       setState('ready')
     } catch (error) {
       if (controller.signal.aborted) return
@@ -186,7 +203,7 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
     }
   }
 
-  return { source, days, observations, state, message, fetchedAt, queryRange, configured, publicNrtSupported, accessMode, load }
+  return { source, days, observations, state, message, fetchedAt, queryRange, configured, publicNrtSupported, publicFeedAvailable, accessMode, archiveImports, load }
 }
 
 const navItems = [
@@ -288,6 +305,11 @@ function normalizeLongitude(longitude: number) {
   return ((longitude + 180) % 360 + 360) % 360 - 180
 }
 
+function unwrapLongitude(longitude: number, reference: number) {
+  const normalized = normalizeLongitude(longitude)
+  return normalized + 360 * Math.round((reference - normalized) / 360)
+}
+
 function createWindGrid(lat: number, lon: number, viewport: WindViewport | null) {
   const centerLatitude = viewport?.centerLatitude ?? lat
   const centerLongitude = viewport?.centerLongitude ?? lon
@@ -342,11 +364,6 @@ function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
   const [field, setField] = useState<WindFieldState>({ state: 'loading', nodes: [], retrievedAt: null })
   const gridSignature = viewport
     ? [viewport.south, viewport.west, viewport.north, viewport.east].map((value) => Math.round(value * 4) / 4).join(',')
-function unwrapLongitude(longitude: number, reference: number) {
-  const normalized = normalizeLongitude(longitude)
-  return normalized + 360 * Math.round((reference - normalized) / 360)
-}
-
     : `${Math.round(lat * 10) / 10},${Math.round(lon * 10) / 10}`
 
   useEffect(() => {
@@ -598,6 +615,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
   const element = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+  const [windCanvasSize, setWindCanvasSize] = useState({ width: 0, height: 0 })
   const selectPoint = useRef(onSelectPoint)
   const selectObservation = useRef(onSelectObservation)
   const reportCamera = useRef(onCameraChange)
@@ -662,6 +680,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       reportCamera.current(cameraWindViewport(current))
     }
     map.current.on('moveend', emitCameraBounds)
+    map.current.on('resize', emitCameraBounds)
     map.current.once('style.load', emitCameraBounds)
     map.current.on('style.load', () => {
       map.current?.setTerrain({ source: 'albertaDem', exaggeration: 1.2 })
@@ -679,7 +698,6 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       const clusterFeature = map.current?.queryRenderedFeatures(event.point, { layers: ['firms-clusters'] })[0]
       const clusterId = Number(clusterFeature?.properties?.cluster_id)
       if (Number.isInteger(clusterId)) {
-    map.current.on('resize', emitCameraBounds)
         const source = map.current?.getSource('firms-hotspots') as GeoJSONSource | undefined
         source?.getClusterExpansionZoom(clusterId).then((zoom) => {
           if (!map.current) return
@@ -727,6 +745,8 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
         instance.resize()
+        const canvas = instance.getCanvas()
+        setWindCanvasSize((current) => current.width === canvas.clientWidth && current.height === canvas.clientHeight ? current : { width: canvas.clientWidth, height: canvas.clientHeight })
         reportCamera.current(cameraWindViewport(instance))
       })
     })
@@ -851,7 +871,13 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         west: Math.min(...vectors.map((vector) => vector.longitude)), east: Math.max(...vectors.map((vector) => vector.longitude)),
         south: Math.min(...vectors.map((vector) => vector.latitude)), north: Math.max(...vectors.map((vector) => vector.latitude)),
       }
-      const particles = Array.from({ length: 360 }, () => ({
+      const canvas = instance.getCanvas()
+      const canvasWidth = windCanvasSize.width || canvas.clientWidth
+      const canvasHeight = windCanvasSize.height || canvas.clientHeight
+      const canvasArea = canvasWidth * canvasHeight
+      const particleCount = Math.min(360, Math.max(88, Math.round(canvasArea / 1150)))
+      const animationInterval = Math.max(70, Math.min(110, Math.round(110 - canvasArea / 10_000)))
+      const particles = Array.from({ length: particleCount }, () => ({
         longitude: particleBounds.west + Math.random() * (particleBounds.east - particleBounds.west),
         latitude: particleBounds.south + Math.random() * (particleBounds.north - particleBounds.south),
         trail: [] as Array<[number, number]>, speedKmh: 0,
@@ -903,7 +929,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         }
         ;(instance.getSource('wind-flow-trails') as GeoJSONSource).setData({ type: 'FeatureCollection', features: lineFeatures } as GeoJSON.FeatureCollection)
         ;(instance.getSource('wind-flow-heads') as GeoJSONSource).setData({ type: 'FeatureCollection', features: headFeatures } as GeoJSON.FeatureCollection)
-      }, 70)
+      }, animationInterval)
     }
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
@@ -914,7 +940,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     document.addEventListener('visibilitychange', handleVisibilityChange)
     removeLoadListener = whenMapStyleReady(instance, updateWind)
     return () => { if (timer) clearInterval(timer); removeLoadListener(); document.removeEventListener('visibilitychange', handleVisibilityChange) }
-  }, [windNodes, windTime, windVisible, reducedMotion])
+  }, [windNodes, windTime, windVisible, reducedMotion, windCanvasSize.width, windCanvasSize.height])
 
   useEffect(() => {
     if (!map.current) return
@@ -979,7 +1005,7 @@ function TerrainCrossSection({ analysis }: { analysis: TerrainAnalysis }) {
   </section>
 }
 
-type CompareFeed = { observations: FireObservation[]; state: 'idle' | 'loading' | 'ready' | 'error'; source: string; days: number; fetchedAt: string | null; queryRange: { start: string; end: string } | null; load: () => Promise<void> }
+type CompareFeed = { observations: FireObservation[]; state: 'idle' | 'loading' | 'ready' | 'error'; source: string; days: number; fetchedAt: string | null; queryRange: { start: string; end: string } | null; accessMode: string | null; archiveImports: FirmsLocalImport[]; load: () => Promise<void> }
 
 function CompareTrend({ feed, tone }: { feed: CompareFeed; tone: 'modis' | 'viirs' }) {
   const byDay = new globalThis.Map<string, number>()
@@ -989,14 +1015,17 @@ function CompareTrend({ feed, tone }: { feed: CompareFeed; tone: 'modis' | 'viir
   }
   const end = feed.queryRange?.end ?? feed.fetchedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)
   const start = feed.queryRange?.start ?? shiftUtcDay(end, 1 - feed.days)
-  const days = Array.from({ length: feed.days }, (_, index) => shiftUtcDay(start, index))
+  const requestedDays = Array.from({ length: feed.days }, (_, index) => shiftUtcDay(start, index))
+  const days = feed.accessMode === 'local-validated-archive' ? requestedDays.filter((day) => byDay.has(day)) : requestedDays
   const maximum = Math.max(1, ...days.map((day) => byDay.get(day) ?? 0))
   return <section className={`compare-trend-card ${tone}`}>
-    <header><div><b>{feed.source.replaceAll('_', ' ')}</b><small>Returned observations · requested UTC days</small></div><strong>{feed.state === 'ready' ? feed.observations.length.toLocaleString() : '—'}</strong></header>
-    {feed.state === 'ready' ? <div className="compare-trend-bars" aria-label={`Daily records for ${feed.source}`}>{days.map((day) => {
+    <header><div><b>{feed.source.replaceAll('_', ' ')}</b><small>{firmsAccessLabel(feed.accessMode)} · returned observations · requested UTC days</small>{feed.accessMode === 'local-validated-archive' && <small>{feed.archiveImports.map((item) => item.sourceFile).join(', ') || 'Local import provenance unavailable'}</small>}</div><strong>{feed.state === 'ready' ? feed.observations.length.toLocaleString() : '—'}</strong></header>
+    {feed.state === 'ready' && feed.accessMode === 'local-validated-archive' && days.length === 0 ? <div className="compare-trend-empty">No imported rows fall in this window. Archive coverage remains unknown.</div> : feed.state === 'ready' ? <>
+      {feed.accessMode === 'local-validated-archive' && <small className="compare-trend-empty">Only dates with imported rows are shown; other dates remain unknown.</small>}
+      <div className="compare-trend-bars" aria-label={`Daily records for ${feed.source}`}>{days.map((day) => {
       const count = byDay.get(day) ?? 0
       return <div key={day} title={`${day} UTC · ${count.toLocaleString()} returned records`}><b>{count.toLocaleString()}</b><i style={{ height: `${count ? Math.max(4, count / maximum * 42) : 3}px` }} /><small>{new Date(`${day}T00:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric' })}</small></div>
-    })}</div> : <div className="compare-trend-empty">{feed.state === 'loading' ? 'Requesting this sensor product…' : feed.state === 'error' ? 'This product request failed; retry from Sensor A/B.' : 'Load this product to build a chart from returned acquisition dates.'}</div>}
+    })}</div></> : <div className="compare-trend-empty">{feed.state === 'loading' ? 'Requesting this sensor product…' : feed.state === 'error' ? 'This product request failed; retry from Sensor A/B.' : 'Load this product to build a chart from returned acquisition dates.'}</div>}
   </section>
 }
 
@@ -1268,7 +1297,7 @@ export function App() {
   </>
   const dashboardPanel = <>
     <div className="panel-heading"><div><h2>Selected area briefing</h2><p>{location.name} · {location.lat.toFixed(3)}°, {location.lon.toFixed(3)}°</p></div><span className="status-tag">{firms.state === 'ready' ? 'OBSERVED' : 'CONTEXT'}</span></div>
-    {firms.state === 'ready' && peakObservation ? <div className="briefing-hotspot"><div className="hotspot-emblem"><Flame size={19} /></div><div><span>Highest reported FRP in loaded window</span><b>{peakObservation.frpMw} MW</b><small>{peakObservation.satellite ?? firms.source} · {peakObservation.acquiredAtUtc ? new Date(peakObservation.acquiredAtUtc).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'acquisition time unavailable'}</small></div></div> : <div className="dashboard-briefing-state"><Satellite size={18} /><div><b>{firms.state === 'ready' ? 'No detections returned for this request' : firms.state === 'loading' ? 'Requesting satellite observations' : firms.state === 'error' ? 'Satellite request unavailable' : firms.configured === false && !firms.publicNrtSupported ? 'NASA FIRMS key not configured' : 'Satellite observations not loaded'}</b><span>{firms.state === 'ready' ? 'This source and window returned no records; that does not establish that no fire is present.' : firms.state === 'error' ? firms.message : firms.configured === false && firms.publicNrtSupported ? 'Recent MODIS, NOAA-20 and NOAA-21 data can use NASA’s public Canada feed; historical queries require the server key.' : firms.configured === false ? 'The server needs FIRMS_MAP_KEY in its local environment before it can request observations.' : 'Load the selected NASA FIRMS product to summarize observed thermal anomalies.'}</span>{firms.state !== 'loading' && <button className="text-button" onClick={() => void firms.load()}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}</div></div>}
+    {firms.state === 'ready' && peakObservation ? <div className="briefing-hotspot"><div className="hotspot-emblem"><Flame size={19} /></div><div><span>Highest reported FRP in loaded window</span><b>{peakObservation.frpMw} MW</b><small>{peakObservation.satellite ?? firms.source} · {peakObservation.acquiredAtUtc ? new Date(peakObservation.acquiredAtUtc).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'acquisition time unavailable'}</small></div></div> : <div className="dashboard-briefing-state"><Satellite size={18} /><div><b>{firms.state === 'ready' ? 'No detections returned for this request' : firms.state === 'loading' ? 'Requesting satellite observations' : firms.state === 'error' ? 'Satellite request unavailable' : firms.configured === false && !firms.publicFeedAvailable ? 'NASA FIRMS key not configured' : 'Satellite observations not loaded'}</b><span>{firms.state === 'ready' ? 'This source and window returned no records; that does not establish that no fire is present.' : firms.state === 'error' ? firms.message : firms.configured === false && firms.publicFeedAvailable ? 'This product has a public Canada NRT feed for the latest 7 days; older dates use a matching local archive if present, otherwise a server key.' : firms.configured === false ? 'This product needs a matching local archive for the selected date or FIRMS_MAP_KEY on the server.' : 'Load the selected NASA FIRMS product to summarize observed thermal anomalies.'}</span>{firms.state !== 'loading' && <button className="text-button" onClick={() => void firms.load()}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}</div></div>}
     <div className="dashboard-weather-heading"><span>FIELD CONDITIONS</span><button className="icon-button" aria-label="Refresh weather" onClick={retry}><RefreshCw size={14} /></button></div>
     {state === 'loading' && <div className="data-state"><span className="spinner" /> Loading weather observations…</div>}
     {state === 'error' && <div className="error-box"><AlertTriangle size={17} /><div><strong>Weather unavailable</strong><p>Check your connection, then retry.</p><button className="text-button" onClick={retry}>Retry weather request</button></div></div>}
@@ -1289,13 +1318,13 @@ export function App() {
       <div><CloudRain size={15} /><span>Hourly precipitation</span><b>{weather ? `${weather.precipitation.toFixed(1)} mm` : 'Unavailable'}</b><small>{weather ? 'Selected forecast hour' : 'Forecast not available'}</small></div>
       <div><Activity size={15} /><span>Relative humidity</span><b>{weather ? `${Math.round(weather.humidity)}%` : 'Unavailable'}</b><small>Open-Meteo · 2 m</small></div>
     </div>
-    <div className="field-mobile-source-status"><span className={`field-mobile-state-dot ${firms.state}`} /><div><b>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} FIRMS observations returned` : firms.state === 'loading' ? 'Requesting satellite observations' : firms.configured === false && !firms.publicNrtSupported ? 'NASA FIRMS key not configured' : firms.state === 'error' ? 'Satellite request unavailable' : firms.publicNrtSupported && !firms.configured ? 'Public recent FIRMS feed available' : 'Satellite observations not loaded'}</b><small>{firms.state === 'ready' ? `${firms.source} · ${firms.accessMode === 'public-nrt-canada-csv' ? 'public Canada feed · latest 7 days' : 'NASA area API'} · ${firms.queryRange?.start ?? '—'} to ${firms.queryRange?.end ?? '—'} UTC` : firms.configured === false && !firms.publicNrtSupported ? 'Map observations need a server key.' : firms.publicNrtSupported && !firms.configured ? 'MODIS / NOAA-20 / NOAA-21 · Canada · last 7 days. Older dates need a key.' : 'Thermal detections are not confirmed incidents.'}</small></div></div>
+    <div className="field-mobile-source-status"><span className={`field-mobile-state-dot ${firms.state}`} /><div><b>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} FIRMS observations returned` : firms.state === 'loading' ? 'Requesting satellite observations' : firms.configured === false && !firms.publicFeedAvailable ? 'NASA FIRMS key not configured' : firms.state === 'error' ? 'Satellite request unavailable' : firms.publicFeedAvailable && !firms.configured ? 'Public recent FIRMS feed available' : 'Satellite observations not loaded'}</b><small>{firms.state === 'ready' ? `${firms.source} · ${firmsAccessLabel(firms.accessMode)} · ${firms.queryRange?.start ?? '—'} to ${firms.queryRange?.end ?? '—'} UTC` : firms.configured === false && !firms.publicFeedAvailable ? 'Map observations need a server key.' : firms.publicFeedAvailable && !firms.configured ? 'Public Canada NRT · latest 7 days. Older dates use a matching local archive or server key.' : 'Thermal detections are not confirmed incidents.'}</small></div></div>
     <div className="field-mobile-refresh-row"><span>{windField.state === 'ready' ? `${windField.nodes.length} wind-grid points · ${retrievedAt ? new Date(retrievedAt).toISOString().slice(11, 16) : '—'} UTC` : `Wind forecast ${windField.state}`}</span><button className="primary-action" onClick={() => void firms.load(queryEndDate)} disabled={firms.state === 'loading'}><RefreshCw size={13} /> {firms.state === 'loading' ? 'Updating' : firms.state === 'error' ? 'Retry updates' : 'Refresh updates'}</button></div>
     <div className="important-note field-warning"><AlertTriangle size={15} /><span>Forecasts and satellite observations are context for awareness; they do not confirm an incident or provide operational instructions.</span></div>
   </section> : fieldMobileTab === 'Updates' ? <section className="field-mobile-panel" aria-label="Satellite updates">
     <header><div><h2>Satellite updates</h2><p>{firms.source.replaceAll('_', ' ')} · {firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</p></div><Satellite size={18} /></header>
     <div className="field-mobile-filters"><label htmlFor="field-mobile-product">Sensor product<select id="field-mobile-product" value={firmsProduct} onChange={(event) => setFirmsProduct(event.target.value as FirmsProduct)}>{firmsSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label htmlFor="field-mobile-date">End date · UTC<input id="field-mobile-date" type="date" max={currentUtcDate} value={queryEndDate ?? currentUtcDate} onChange={(event) => { const date = event.target.value || null; setQueryEndDate(date); if (date) void firms.load(date) }} /></label><label htmlFor="field-mobile-days">Window<select id="field-mobile-days" value={firmsDays} onChange={(event) => setFirmsDays(Number(event.target.value) as 1 | 2 | 3 | 5)}><option value={1}>1 day</option><option value={2}>2 days</option><option value={3}>3 days</option><option value={5}>5 days</option></select></label></div>
-    <div className={`field-mobile-source-status ${firms.state}`}><span className={`field-mobile-state-dot ${firms.state}`} /><div><b>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} observations returned` : firms.state === 'loading' ? 'Loading selected source' : firms.configured === false && !firms.publicNrtSupported ? 'NASA FIRMS key not configured' : firms.state === 'error' ? 'Request unavailable' : firms.publicNrtSupported && !firms.configured ? 'Public recent FIRMS feed available' : 'No request for this area yet'}</b><small>{firms.state === 'ready' && firms.fetchedAt ? `Retrieved ${new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · ${firms.accessMode === 'public-nrt-canada-csv' ? 'public Canada feed · latest 7 days' : 'NASA area API'} · ${firms.queryRange?.start ?? '—'} → ${firms.queryRange?.end ?? '—'}` : firms.message || (firms.publicNrtSupported && !firms.configured ? 'MODIS / NOAA-20 / NOAA-21 · Canada · last 7 days. Historical requests need a key.' : 'Refresh to request the selected product and date window.')}</small></div></div>
+    <div className={`field-mobile-source-status ${firms.state}`}><span className={`field-mobile-state-dot ${firms.state}`} /><div><b>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} observations returned` : firms.state === 'loading' ? 'Loading selected source' : firms.configured === false && !firms.publicFeedAvailable ? 'NASA FIRMS key not configured' : firms.state === 'error' ? 'Request unavailable' : firms.publicFeedAvailable && !firms.configured ? 'Public recent FIRMS feed available' : 'No request for this area yet'}</b><small>{firms.state === 'ready' && firms.fetchedAt ? `Retrieved ${new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · ${firmsAccessLabel(firms.accessMode)} · ${firms.queryRange?.start ?? '—'} → ${firms.queryRange?.end ?? '—'}` : firms.message || (firms.publicFeedAvailable && !firms.configured ? 'Public Canada NRT · latest 7 days. Older dates use a matching local archive or server key.' : 'Refresh to request the selected product and date window.')}</small></div></div>
     <button className="primary-action field-mobile-refresh" onClick={() => void firms.load(queryEndDate)} disabled={firms.state === 'loading'}><RefreshCw size={14} /> {firms.state === 'loading' ? 'Requesting updates…' : firms.state === 'error' ? 'Retry FIRMS request' : 'Refresh satellite updates'}</button>
     {firms.state === 'ready' && firms.observations.length > 0 ? <div className="field-mobile-observations">{firms.observations.slice(0, 20).map((observation) => <button key={observation.id} onClick={() => { selectObservation(observation); setActive('Live Map') }}><span><Flame size={14} /><b>{observation.source.replaceAll('_', ' ')}</b></span><strong>{observation.frpMw === null ? 'FRP —' : `${observation.frpMw} MW`}</strong><small>{observation.acquiredAtUtc ? `${new Date(observation.acquiredAtUtc).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'Time unavailable'} · {observation.latitude.toFixed(3)}°, {observation.longitude.toFixed(3)}°</small></button>)}</div> : firms.state === 'ready' ? <div className="field-mobile-empty"><Satellite size={17} /><span>No observations were returned for this request. That does not establish that no fire is present.</span></div> : firms.state === 'error' ? <div className="field-mobile-empty"><AlertTriangle size={17} /><span>{firms.message}</span></div> : <div className="field-mobile-empty"><Satellite size={17} /><span>Returned observations appear here with their source and UTC acquisition time.</span></div>}
   </section> : fieldMobileTab === 'Layers' ? <section className="field-mobile-panel" aria-label="Map layers and sources">
@@ -1372,7 +1401,7 @@ export function App() {
             <header className="dashboard-summary-header">
               <span className="dashboard-summary-emblem"><Flame size={16} /></span>
               <div className="dashboard-summary-title"><span>AREA ACTIVITY</span><h2 id="dashboard-summary-title">Wildfire summary</h2></div>
-              <span className={`dashboard-status-pill ${firms.state === 'ready' ? 'ready' : firms.state === 'loading' ? 'loading' : firms.state === 'error' ? 'error' : firms.configured === false && firms.publicNrtSupported ? 'public' : firms.configured === false ? 'blocked' : 'idle'}`}><i />{firms.state === 'ready' ? 'Data loaded' : firms.state === 'loading' ? 'Loading' : firms.state === 'error' ? 'Unavailable' : firms.configured === false && firms.publicNrtSupported ? 'Public feed' : firms.configured === false ? 'Key needed' : 'Ready'}</span>
+              <span className={`dashboard-status-pill ${firms.state === 'ready' ? 'ready' : firms.state === 'loading' ? 'loading' : firms.state === 'error' ? 'error' : firms.configured === false && firms.publicFeedAvailable ? 'public' : firms.configured === false ? 'blocked' : 'idle'}`}><i />{firms.state === 'ready' ? 'Data loaded' : firms.state === 'loading' ? 'Loading' : firms.state === 'error' ? 'Unavailable' : firms.configured === false && firms.publicFeedAvailable ? 'Public feed' : firms.configured === false ? 'Key needed' : 'Ready'}</span>
             </header>
             <div className="dashboard-summary-context"><Map size={13} /><b>{location.name}</b><i /><span>{firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</span></div>
             <div className="dashboard-detection-count">
@@ -1381,12 +1410,12 @@ export function App() {
             </div>
             <div className="dashboard-product-line"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div>
             {weather && <div className="dashboard-condition-row"><div><Wind size={14} /><span>Wind</span><b>{Math.round(weather.windSpeed)} km/h</b></div><div><CloudRain size={14} /><span>Rain</span><b>{weather.precipitation.toFixed(1)} mm</b></div></div>}
-            {firms.configured === false && <p className="dashboard-key-note">{firms.publicNrtSupported ? 'Public feeds cover Canada and the latest 7 days. Older dates need a FIRMS key.' : 'FIRMS needs a server key before this source can be queried.'}</p>}
+            {firms.configured === false && <p className="dashboard-key-note">{firms.publicFeedAvailable ? 'The public Canada NRT feed covers at most the latest 7 days. Older dates use a matching local archive or the server key.' : 'Use a matching local archive for the selected date or configure FIRMS_MAP_KEY on the server.'}</p>}
             {firms.state === 'error' && <p className="dashboard-key-note error-note">The observation request failed. Retry to load this product and time window.</p>}
             <button className="dashboard-load-button" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Loading observations</> : <><RefreshCw size={13} /> {firms.state === 'error' ? 'Retry observations' : firms.state === 'ready' ? 'Refresh observations' : 'Load observations'}</>}</button>
-            {firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · {firms.accessMode === 'public-nrt-canada-csv' ? 'public Canada feed · 7-day limit' : firms.accessMode === 'map-key-area-api' ? 'keyed area API' : 'access method unavailable'}</small>}
+            {firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · {firmsAccessLabel(firms.accessMode)}{firms.accessMode === 'local-validated-archive' ? ` · ${firms.archiveImports.map((item) => item.sourceFile).join(', ') || 'import provenance unavailable'}` : ''}</small>}
           </section>}
-          {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false && !firms.publicNrtSupported ? 'KEY NOT SET' : firms.publicNrtSupported && !firms.configured ? 'PUBLIC FEED' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateQueried ? 'Not an incident count' : calendarWindowStart ? `${calendarWindowStart} → ${calendarWindowEnd}` : 'No query window loaded'}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load(calendarSelectedDate)}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the requested window is unknown, not a zero.</small></section>}
+          {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false && !firms.publicFeedAvailable ? 'KEY NOT SET' : firms.publicFeedAvailable && !firms.configured ? 'PUBLIC FEED' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateQueried ? 'Not an incident count' : calendarWindowStart ? `${calendarWindowStart} → ${calendarWindowEnd}` : 'No query window loaded'}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load(calendarSelectedDate)}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the requested window is unknown, not a zero.</small></section>}
           {active === 'Terrain' && <section className="terrain-map-controls"><header><Mountain size={16} /><div><b>Terrain layers</b><small>Map & local analysis</small></div></header><button className="terrain-map-layer" onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>Elevation relief</span><b>{terrainEnabled ? '3D' : '2D'}</b></button><button className="terrain-map-layer" onClick={() => setTransectVisible((value) => !value)}><Activity size={15} /><span>Cross-section A—B</span><b>{transectVisible ? 'ON' : 'OFF'}</b></button><div className="terrain-map-layer static-layer"><Activity size={15} /><span>Local slope sample</span><b>{terrainAnalysis.state === 'ready' ? `${terrainAnalysis.slopeDegrees?.toFixed(1)}°` : terrainAnalysis.state.toUpperCase()}</b></div><div className="terrain-map-layer unavailable-layer"><Layers3 size={15} /><span>Land cover / fuels</span><b>NO SOURCE</b></div><div className="terrain-map-key"><i /> Cross-section · 80 km east–west</div></section>}
           <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={(active === 'Compare' ? compareObservations.length > 0 : active === 'Live Map' ? filteredLiveObservations.length > 0 : firms.state === 'ready' && visibleObservations.length > 0) ? 'fire-loaded' : ''} /> {active === 'Compare' ? `MODIS ${compareA.state === 'ready' ? compareA.observations.length : '—'} · VIIRS ${compareB.state === 'ready' ? compareB.observations.length : '—'} returned` : active === 'Live Map' ? liveFeedState === 'ready' ? `${visibleObservations.length} visible${selectedLiveDate ? ` · ${selectedLiveDate}` : ''} · clustered above zoom 9` : liveFeedState === 'loading' ? 'Requesting selected FIRMS sensors' : liveFeedState === 'error' ? 'Selected FIRMS sensors unavailable' : 'Load selected FIRMS sensors' : active === 'Calendar' ? calendarDateQueried ? `${visibleObservations.length} returned on ${calendarSelectedDate}` : firms.state === 'loading' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Requesting ${calendarSelectedDate}` : firms.state === 'error' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Request failed · ${calendarSelectedDate}` : 'Selected date not queried' : firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
         </div>
@@ -1399,7 +1428,7 @@ export function App() {
         const Icon = tab === 'Map' ? Map : tab === 'Updates' ? Satellite : tab === 'Layers' ? Layers3 : ClipboardList
         return <button key={tab} type="button" className={fieldMobileTab === tab ? 'active' : ''} aria-current={fieldMobileTab === tab ? 'page' : undefined} onClick={() => setFieldMobileTab(tab)}><Icon size={18} /><span>{tab}</span></button>
       })}</nav>}
-      <footer className="app-footer"><span>Weather: Open-Meteo · basemap: OpenStreetMap · DEM: Mapzen Terrarium via AWS · FIRMS: {firms.configured === false ? firms.publicNrtSupported ? 'public Canada NRT feed · no key · 7-day limit; history needs key' : 'server key not set' : firms.configured ? 'server key configured' : 'checking configuration'}</span><span>Wind field is an hourly forecast visualization, not a fire-spread prediction</span></footer>
+      <footer className="app-footer"><span>Weather: Open-Meteo · basemap: OpenStreetMap · DEM: Mapzen Terrarium via AWS · FIRMS: {firms.configured === false ? firms.publicFeedAvailable ? 'public Canada NRT feed · 7-day limit; older dates use a local import or server key' : 'server key not set · dated local imports can be used' : firms.configured ? 'server key configured' : 'checking configuration'}</span><span>Wind field is an hourly forecast visualization, not a fire-spread prediction</span></footer>
     </main>
   </div>
 }
