@@ -6,6 +6,108 @@ Construire l’application cartographique montrée dans les huit maquettes de `d
 
 L’application est un outil de situation et d’analyse. Tant qu’un flux n’a pas été branché et contrôlé, la vue doit annoncer clairement son état au lieu d’afficher les valeurs fictives des maquettes comme si elles étaient réelles.
 
+## Direction visuelle pour l’implémentation 1:1
+
+Le sujet est l’observation géospatiale des anomalies thermiques en Alberta. L’écran doit aider un analyste à relier une observation à son lieu, son heure et sa source. La carte est donc l’élément principal, et les panneaux sont des instruments de lecture compacts autour d’elle.
+
+**Choix de composition :** conserver un shell commun avec la même barre latérale, le même bandeau de zone/période/capteurs et la même carte persistante; adapter les panneaux et graphiques à la tâche de chaque onglet. Une série de pages indépendantes ferait perdre le contexte spatial et les filtres. Sur desktop, viser les proportions de la maquette 1600 × 1000 : rail fixe, barre de filtres, carte au centre, docks latéraux et bande de temps/graphique en bas; chaque dock peut défiler dans sa propre zone. Sur mobile, utiliser un menu latéral et une carte 2D prioritaire avec panneau bas repliable.
+
+| Option de layout | Lecture | Décision |
+|---|---|---|
+| A — shell persistant, carte et panneaux spécialisés | Une même zone, date et sélection restent en place en passant Dashboard → Live Map → Calendar; la carte est le fil conducteur. | **Retenue**, c’est le layout des maquettes et la préférence déjà établie. |
+| B — page indépendante par onglet | Plus de surface pour un graphique ou une table, mais la carte, les filtres et la sélection changent ou disparaissent à chaque page. | Rejetée pour le desktop; certains panneaux prennent toute la largeur seulement sur téléphone ou dans une vue de détail. |
+
+```text
+DESKTOP — 1600 × 1000
+┌────────────┬───────────────────────────────────────────────────────────────┐
+│ sidebar    │ bandeau : zone | dates UTC | produits/capteurs | état source │
+│ persistante├──────────────────┬─────────────────────┬────────────────────┤
+│ identique  │ résumé/couches    │ CARTE + vent       │ sélection/preuve   │
+│ 8 onglets  │ filtres ou config │ 3D, hotspots       │ détail + graphique │
+│            ├──────────────────┴─────────────────────┴────────────────────┤
+│            │ calendrier, lecture temporelle ou tendance liée à la carte  │
+└────────────┴───────────────────────────────────────────────────────────────┘
+
+MOBILE — 390 × 844
+┌────────────────────────────────────┐
+│ titre | zone | fraîcheur           │
+├────────────────────────────────────┤
+│ carte 2D, vent, sélection          │
+│ contrôles tactiles et légende      │
+├────────────────────────────────────┤
+│ panneau bas : conditions / détails│
+│ actions Carte · Mises à jour · ... │
+└────────────────────────────────────┘
+```
+
+**Signature visuelle :** le « ruban de vent » cyan traverse le relief et relie la carte à l’heure météo sélectionnée; les anomalies thermiques gardent leur couleur et leur identité capteur. C’est l’élément mémorable propre à ce produit. Le reste reste calme : surfaces bleu encre, traits fins, typographie compacte, animation limitée au flux et au déplacement temporel. Ne pas ajouter de logo NASA, ni de statuts verts décoratifs. Les sources NASA sont nommées et attribuées sans laisser croire à une approbation NASA.
+
+| Rôle | Décision de style |
+|---|---|
+| Fond | `#07111A` — encre profonde |
+| Panneaux | `#122330` — bleu ardoise |
+| Traits | `#28404D` — séparation discrète |
+| Vent / focus | `#25D2D8` — cyan lisible |
+| Attention / activité | `#F4B12F` et `#F2683B` — ambre puis braise, seulement pour les données qui le justifient |
+| Interface / données | IBM Plex Sans pour les libellés, IBM Plex Mono pour mesures et heures UTC; conserver les solutions de repli hors ligne |
+
+Ce choix suit le système existant dans [DESIGN.md](DESIGN.md) et [tokens.css](src/styles/tokens.css), plutôt que de réinventer un thème générique. À chaque vue, la hiérarchie, les marges, les proportions et les contrôles des maquettes sont reproduits; les nombres fictifs, fausses anomalies et périmètres inventés ne le sont pas.
+
+## Plan concret par écran — cible et critères fonctionnels
+
+| Écran | Composition à reprendre | Interactions et données qui rendent l’écran fonctionnel |
+|---|---|---|
+| **Dashboard** — `01-dashboard.png` | Filtres communs en haut; résumé à gauche; carte Alberta au centre; briefing à droite; tendance, composition capteurs et caveat en bas. | Une synthèse réelle issue de FIRMS et de la période choisie; facettes MODIS/VIIRS distinctes; série et comparaison historique masquées si l’archive, la couverture ou la référence manquent; clic sur période/cluster conserve la sélection vers la carte et le calendrier. |
+| **Live Map** — `02-carte-live.png` | Contrôles de couches à gauche; grande carte 2D/3D; inspection à droite; lecture temporelle et activité en bas. | Visibilité distincte par plateforme/produit; points, cluster ou densité avec seuil explicite; filtres de confiance natifs; inspection d’une ligne NASA avec heure UTC, plateforme, confiance, FRP, ID/version; l’animation suit seulement les dates disponibles. |
+| **Calendar** — `03-calendrier.png` | Résumé capteurs à gauche; carte contextuelle au-dessus; grille mensuelle/hebdomadaire en bas; détails de semaine à droite. | Agrégation calculée depuis des observations valides; jour vide, jour non couvert et jour sans fichier restent des états distincts; clic semaine synchronise carte, courbe et inspection; activité relative toujours accompagnée de sa métrique et de sa période de référence. |
+| **Compare** — `04-comparer.png` | Configuration à gauche; carte swipe ou côte-à-côte au centre; séries et état de validation à droite. | MODIS et VIIRS filtrés indépendamment sur la même zone et période; diff/mailles uniquement avec supports compatibles; les scores de corrélation ou d’accord restent « non calculés/non validés » jusqu’à un pipeline et un jeu de validation réels. |
+| **Terrain** — `05-terrain.png` | Sélecteur de couches à gauche; carte en relief et transect en bas; cellule sélectionnée et résumé environnemental à droite. | DEM 3D actuel; profil, pente/aspect, eau et composition du couvert seulement après ajout d’une source/licence/résolution validée; sélection de cellule pilotée par le pointeur; si seule l’altitude est disponible, garder la mise en page et afficher précisément les couches manquantes. |
+| **Data & Sources** — `06-sources.png` | Catalogue à gauche; aperçu cartographique au centre; fiche produit, mapping et provenance à droite; pipeline en bas. | Sélection d’un produit réel; champs source→modèle, filtres, état, fraîcheur, période, licence/URL et empreinte du fichier; export lié au périmètre/période; ne jamais afficher une taille ou empreinte d’exemple comme vraie provenance. |
+| **Scenario** — `07-scenario-progression.png` | Barre d’entrées datées en haut; environnement à gauche; carte au centre; hypothèses et incertitude à droite; horizon temporel en bas. | Vent/pluie sont des prévisions sourcées; périmètre initial daté/confirmé, combustibles FBP, humidité, pente et moteur validé sont des prérequis pour toute enveloppe. Tant qu’ils manquent, garder ce layout, rendre « calcul indisponible » et ne dessiner aucune croissance simulée. Un calcul futur doit être une exécution reproductible et versionnée. |
+| **Mobile Situation** — `08-mobile-terrain.png` | Même identité; carte dominante; fiche « situation » en panneau bas; navigation mobile Carte/Mises à jour/Couches/Rapport. | Carte 2D et contrôles tactiles; fraîcheur/hors ligne réelle; localisation après autorisation; rapport attribué comme brouillon; contenu à vérifier avec le commandement, sans points d’attaque, ordre tactique, numéro SOS non configuré ou statut de synchronisation fictif. |
+
+### État constaté avant le prochain chantier
+
+- Le shell, les huit entrées de navigation, la météo horaire, la grille de vent Open-Meteo à 25 points, le relief 3D AWS Terrarium, l’altitude ponctuelle et le proxy serveur FIRMS sont présents.
+- Les routes gardent une carte partagée, mais la plupart des vues ne reprennent pas encore leur composition propre : Dashboard reste un panneau météo, Calendar reste une note d’état, Compare reste vide, Terrain n’a pas encore pente/couvert/profil, Data & Sources n’a pas de catalogue/manifeste et Scenario ne lance pas de calcul.
+- Les filtres de zone/période/capteurs globaux et leur persistance entre vues ne sont pas encore implémentés. La demande FIRMS actuelle ne suffit pas à fournir la série historique nécessaire aux maquettes.
+- Le rendu carte applique actuellement un filtre CSS au conteneur WebGL entier. Cela assombrit aussi les couches de vent; au premier chantier cartographique, remplacer ce traitement global par une palette raster de fond et garder les vecteurs cyan/ambre sans filtre. Garder le 3D activable et les symboles de vent lisibles au-dessus du relief.
+- Le développement de fonctions complètes dépend des accès réels aux produits. Tant que `FIRMS_MAP_KEY` n’est pas configurée sur le serveur, les écrans doivent rester utilisables en état vide explicatif; aucune clé ne sera ajoutée au dépôt ou collée dans le chat.
+
+## Tranches de réalisation et publication
+
+Chaque ligne ci-dessous est une tranche verticale livrable. Elle se termine par un build, une revue manuelle de la vue touchée aux tailles de référence, un commit, puis un push et une intégration sur `main`. Les données sensibles restent dans `.env` et hors Git.
+
+| Tranche | Travail concret | Preuve d’achèvement avant push |
+|---|---|---|
+| **A — fondation UI partagée** | Sortir le shell, la barre latérale, l’en-tête global, les contrôles de filtres, les docks, la timeline et la carte de `App.tsx` vers des composants/feature folders; introduire l’état partagé AOI, dates UTC, produits, sélection et heure; sérialiser les filtres partageables dans l’URL. Ne pas changer le thème approuvé. | Navigation clavier, changements d’onglet sans perte de sélection, contrôles communs identiques, pas de scroll de page à 1600×1000; mobile drawer et panneau bas utilisables à 390×844. |
+| **B — source de détections et carte live** | Garder le proxy FIRMS existant; établir adaptateur typé et provenance; ajouter chargement par périmètre/période bornés, pagination/snapshots selon API, distinction produit SP/NRT et plateforme; vraie heatmap/cluster, filtre/inspection; corriger couleurs et placement du vent sur le terrain 3D. | Réponse FIRMS réelle inspectable de la carte au détail; loading/partiel/vide/inconnu/erreur distincts; aucune donnée simulée affichée comme observée. |
+| **C — Dashboard** | Remplacer panneau météo par la disposition Dashboard de la maquette; bâtir cartes de synthèse, facettes capteurs, briefing, chart saisonnier et caveat avec des agrégats typés issus des requêtes. | Chaque chiffre a période, unité, produit et source; pas de baseline/coverage sans données; clic dans courbe et carte conserve le même contexte. |
+| **D — Calendar** | Construire grille mensuelle/hebdomadaire, légende métrique et panneau période sélectionnée depuis l’agrégat partagé. | Les cases distinguent activité nulle, non observée et source indisponible; sélection synchronisée à la carte/dashboard. |
+| **E — Compare** | Ajouter facettes indépendantes par capteur, swipe/côte-à-côte, série de chaque capteur et calcul descriptif sur grille/temps communs; registre de statut de validation. | Même AOI/période côté A et B; seules métriques définies sont affichées; aucune calibration simulée ou prétendument validée. |
+| **F — Terrain et Sources** | Ajouter catalogue/manifeste produits; brancher sources de DEM, occupation du sol, couverture et données terrain après validation; coupe de terrain/profil et fiche provenance. | Attribution, date, résolution et état par couche; cellule sélectionnée relie map, tableau et source; classes de combustible ne viennent pas d’une simple couleur de fond. |
+| **G — Scenario** | Modéliser les entrées avec timestamps et qualité; choisir/intégrer un moteur officiel adapté au Canada, le lancer dans un worker, enregistrer paramètres et versions; séparer sortie, incertitude et limites. | Pas d’enveloppe avant périmètre initial daté, entrées de combustible/météo/terrain adaptées et évaluation indépendante; scénario reproductible pour mêmes entrées. |
+| **H — Mobile, accessibilité et finition** | Reprendre le mockup mobile sans son cadre de téléphone : carte compacte, panneaux bas, navigation fixe, réseau dégradé, états cache, contrôles 44 px et reduced-motion. Régler typographie, densité, contrastes et composition de chaque capture. | Comparaison visuelle à 1600×1000 et 390×844 pour chaque écran; focus clavier, alternative textuelle aux valeurs cartographiques, reduced-motion et contenu exploitable sans scroll inutile. |
+
+### Architecture cible pour ces tranches
+
+```text
+src/app/            shell, navigation, URL et sélection globale
+src/features/map/   MapLibre, couches source, terrain, vent et légendes
+src/features/*/     dashboard, live-map, calendar, compare, terrain, sources, scenario, field
+src/data/           contrats typés, adaptateurs Open-Meteo/FIRMS/DEM, provenance et états
+src/components/     filtres, graphiques, panneaux, tables, erreurs/vides chargés
+server/             proxy de secrets et acquisitions qui ne doivent pas vivre dans le navigateur
+```
+
+Un seul état partagé est l’autorité pour la zone, les dates UTC, le produit/capteur, la cellule, la détection et l’heure météo. Chaque module consomme les mêmes sélections; un onglet n’implémente pas une copie indépendante de la carte ou des filtres. Les graphiques sont des vues des données typées, jamais des séries fixées dans le JSX. La carte conserve ses sources/attributions et expose un contrôle de couche dont le libellé, l’état, la plage horaire et la provenance sont visibles.
+
+Les propriétaires communs sont : barre de filtres (zone + période UTC + plateformes), recherche/choix de zone, sélecteur de dates app-owned, liste de capteurs à cases à cocher, contrôle de couches, état source inline, légende, détail de sélection et menu d’export. Ils sont définis une seule fois et déclinés par densité, pas réécrits dans chaque écran. L’interface reste en anglais comme les maquettes; la documentation produit reste en français. Toutes les dates d’acquisition sont stockées en UTC et affichent clairement leur fuseau.
+
+### Revue visuelle de chaque tranche
+
+Comparer la vue réelle à son fichier `docs/ui/` à 1600×1000 (desktop) et 390×844 (mobile). La revue porte sur géométrie, largeur des docks, densité, niveaux typographiques, légendes, marges, états de chargement et comportements responsive. La fidélité concerne la composition et les interactions; les valeurs de démonstration des PNG restent interdites en données réelles. Faire cette revue dans Chrome pendant l’inspection puis fermer l’instance utilisée, conformément à la préférence exprimée.
+
 ## État de réalisation
 
 **Tranches cartographiques implémentées :** shell sombre à navigation persistante, carte MapLibre interactive avec sélection d’un point, choix de quatre secteurs de l’Alberta, terrain 3D et hillshade depuis le DEM AWS Terrarium, ainsi qu’une altitude ponctuelle Open-Meteo. Une requête météo groupée construit une grille 5×5 de 25 points; l’interpolation vectorielle horaire alimente des flèches de direction/vitesse et des particules animées. La timeline synchronise le vent, la pluie, la température, l’humidité, les flèches et le flux; le relief et le vent ont chacun un contrôle d’affichage. L’animation exprime un flux relatif et ne représente ni le temps réel de déplacement d’une masse d’air, ni la propagation d’un incendie. La sensibilité au vent permet d’éditer une hypothèse, mais ne calcule pas de propagation.
@@ -76,43 +178,7 @@ Périmètre incident ─────── frontière initiale ─────�
 
 ## Ordre de réalisation
 
-### Étape 1 — fondation et rendu fidèle
-
-- Mettre en place application Vite, shell plein écran, même sidebar, topbar et tokens de DESIGN.md.
-- Construire le Dashboard en référence à sa maquette, états vides réalistes et données locales clairement marquées.
-- Ajouter navigation accessible et état global d’AOI/période/capteurs.
-- Critère : toutes les maquettes sont représentées comme routes fonctionnelles, aucune page ne déborde verticalement sur desktop de référence.
-
-### Étape 2 — carte et sources NASA
-
-- Intégrer MapLibre, couches par plateforme, sélection/inspection et FIRMS archive/snapshot.
-- Construire registre source/manifeste et normalisation produit par produit.
-- Critère : une détection réelle peut être retrouvée depuis la carte jusqu’au fichier, et erreur/absence/inconnu restent distincts.
-
-### Étape 3 — météo et vent observables
-
-- Ajouter adaptateur météo horaire, contrôles AOI/période, flèches vectorielles, animation temporelle et états de cache/fraîcheur.
-- Ajouter précipitation, température, humidité relative comme variables source, pas comme sécheresse calculée.
-- Critère : valeurs/horodatages/unités de l’interface correspondent exactement à la réponse source et aux conversions affichées.
-
-### Étape 4 — calendrier, comparaison et terrain
-
-- Produire agrégats reproductibles par plateforme, calendriers, comparaison et profils topographiques.
-- Brancher sources auxiliaires au catalogue et afficher provenance/résolution.
-- Critère : même sélection alimente map/chart/calendar et export; aucun taux « corrigé » sans test.
-
-### Étape 5 — sécheresse et modèle de propagation
-
-- Choisir jeu de combustible et service officiel FWI/FBP approprié à la zone, documenter droit d’usage/API, puis implémenter un worker côté serveur.
-- Valider le moteur sur cas historiques avec périmètres/observations distincts de ceux utilisés pour calibrer.
-- Comparer sorties aux observations d’agence et publier biais/incertitude/domaine; garder modèle verrouillé tant que validation non suffisante.
-- Critère : édition des hypothèses produit une simulation reproductible; les contours et horizon sont marqués comme potentiel et datés.
-
-### Étape 6 — mobile et durcissement
-
-- Construire layout adapté aux gants, lumière et réseau discontinu; offline read-only pour snapshot et cache d’AOI; rapport terrain avec provenance.
-- Contrôles d’accessibilité, performance, visual review à petite et grande largeur et déploiement preview.
-- Critère : pertes réseau/données anciennes sont explicites, contenu opérationnel jamais inventé, desktop/mobile restent utilisables.
+La séquence exécutable, écran par écran, est la table **Tranches de réalisation et publication (A–H)** plus haut dans ce document. Elle remplace l’ancien regroupement en six étapes afin de terminer et publier chaque vue visible séparément. L’ordre est A fondation → B carte/source → C Dashboard → D Calendar → E Compare → F Terrain/Sources → G Scenario → H Mobile et finition.
 
 ## Conditions d’intégration continue et Git
 

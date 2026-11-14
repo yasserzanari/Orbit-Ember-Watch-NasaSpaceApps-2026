@@ -45,4 +45,4 @@ Le shell cartographique plein écran, la navigation entre les vues, le choix de 
 
 L’intégration NASA FIRMS est prête, mais nécessite votre MAP_KEY dans `.env` avant que des hotspots puissent être récupérés. Les agrégats, comparaisons MODIS/VIIRS et calendriers de détections restent à construire. Le scénario n’est pas une simulation de propagation : il expose les entrées météo et bloque l’enveloppe de progression tant qu’un périmètre daté, des combustibles, l’humidité adaptée, le relief et un moteur validé ne sont pas intégrés. Les valeurs fictives des maquettes ne sont pas affichées comme des observations.
 
-Voir [le plan d’implémentation](PLAN-IMPLEMENTATION.md), [le design system](DESIGN.md) et [le contrat UX](UX-CONTRACT.md) pour les prochaines tranches et critères d’acceptation.
+Voir le [plan d’implémentation 1:1 des huit maquettes](PLAN-IMPLEMENTATION.md), le [design system](DESIGN.md) et le [contrat UX](UX-CONTRACT.md) pour les tranches, les dépendances de données et les critères d’acceptation.
