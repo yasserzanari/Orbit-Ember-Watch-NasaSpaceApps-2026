@@ -794,6 +794,69 @@
   .dashboard-condition-row b { font-size: 13px; }
 }
 
+/* Dashboard summary: clearer hierarchy and touch targets over the live map. */
+.dashboard-map-summary {
+  width: 324px;
+  gap: 12px;
+  padding: 16px;
+  border-color: rgba(177, 230, 235, .38);
+  background:
+    radial-gradient(ellipse at 0 0, rgba(46, 204, 207, .17), transparent 54%),
+    linear-gradient(135deg, rgba(223, 249, 251, .075), transparent 38%),
+    linear-gradient(145deg, rgba(15, 34, 46, .9), rgba(5, 16, 25, .86));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .44), 0 0 30px rgba(37, 210, 216, .09), inset 0 1px 0 rgba(246, 255, 255, .2);
+}
+.dashboard-summary-header { grid-template-columns: 38px minmax(0,1fr) auto; gap: 9px; }
+.dashboard-summary-emblem { width: 38px; height: 38px; border-radius: 12px; box-shadow: 0 5px 18px rgba(242, 104, 59, .12), inset 0 1px 0 rgba(255,255,255,.14); }
+.dashboard-summary-title h2 { font-size: 15px; }
+.dashboard-summary-title>span { font-size: 9px; }
+.dashboard-status-pill { min-height: 28px; padding-inline: 9px; font-size: 9px; }
+.dashboard-summary-context { min-height: 34px; font-size: 11px; }
+.dashboard-detection-count { min-height: 88px; padding: 12px; }
+.dashboard-detection-count>span { font-size: 36px; }
+.dashboard-detection-count b { font-size: 12px; }
+.dashboard-detection-count small { font-size: 10px; line-height: 1.45; }
+.dashboard-product-line { min-height: 34px; font-size: 10px; }
+.dashboard-condition-row>div { min-height: 66px; }
+.dashboard-condition-row span { font-size: 10px; }
+.dashboard-condition-row b { font-size: 15px; }
+.dashboard-key-note { font-size: 10px; line-height: 1.5; }
+.dashboard-load-button { min-height: 44px; font-size: 11px; font-weight: 600; }
+.dashboard-freshness { font-size: 9px; }
+.dashboard-status-pill.blocked { box-shadow: 0 0 18px rgba(244, 177, 47, .08), inset 0 1px 0 rgba(255,255,255,.08); }
+.dashboard-status-pill.error { box-shadow: 0 0 18px rgba(239, 76, 76, .1), inset 0 1px 0 rgba(255,255,255,.08); }
+@media (max-width: 1100px) and (min-width: 761px) {
+  .dashboard-map-summary { width: 252px; padding: 12px; gap: 9px; }
+  .dashboard-summary-header { grid-template-columns: 32px minmax(0,1fr) auto; gap: 7px; }
+  .dashboard-summary-emblem { width: 32px; height: 32px; }
+  .dashboard-summary-title h2 { font-size: 12px; }
+  .dashboard-status-pill { min-height: 23px; padding-inline: 6px; font-size: 8px; }
+  .dashboard-summary-context { min-height: 28px; font-size: 9px; }
+  .dashboard-detection-count { min-height: 70px; padding: 9px; }
+  .dashboard-detection-count>span { font-size: 28px; }
+  .dashboard-detection-count b { font-size: 10px; }
+  .dashboard-detection-count small { font-size: 8px; }
+  .dashboard-condition-row>div { min-height: 54px; padding: 8px; }
+  .dashboard-condition-row b { font-size: 12px; }
+}
+@media (max-width: 760px) {
+  .dashboard-map-summary { width: min(248px, calc(100% - 16px)); padding: 11px; gap: 8px; }
+  .dashboard-summary-header { grid-template-columns: 30px minmax(0,1fr) auto; gap: 6px; }
+  .dashboard-summary-emblem { width: 30px; height: 30px; }
+  .dashboard-summary-title h2 { font-size: 11px; }
+  .dashboard-status-pill { min-height: 22px; padding-inline: 6px; font-size: 7px; }
+  .dashboard-summary-context { min-height: 25px; font-size: 8px; }
+  .dashboard-detection-count { min-height: 60px; padding: 8px; }
+  .dashboard-detection-count>span { min-width: 42px; font-size: 23px; }
+  .dashboard-detection-count b { font-size: 9px; }
+  .dashboard-detection-count small { font-size: 7px; }
+  .dashboard-condition-row>div { min-height: 48px; padding: 7px; }
+  .dashboard-condition-row span { font-size: 8px; }
+  .dashboard-condition-row b { font-size: 12px; }
+  .dashboard-key-note { padding: 7px 8px; font-size: 8px; }
+  .dashboard-load-button { min-height: 40px; font-size: 9px; }
+}
+
 /* Reserve the left map dock for inputs; keep the wind scale in the open map area. */
 .scenario-workspace .wind-speed-legend,
 .terrain-workspace .wind-speed-legend {

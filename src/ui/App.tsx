@@ -1513,7 +1513,7 @@ export function App() {
             <header className="dashboard-summary-header">
               <span className="dashboard-summary-emblem"><Flame size={16} /></span>
               <div className="dashboard-summary-title"><span>AREA ACTIVITY</span><h2 id="dashboard-summary-title">Wildfire summary</h2></div>
-              <span className={`dashboard-status-pill ${firms.state === 'ready' ? 'ready' : firms.state === 'loading' ? 'loading' : firms.state === 'error' ? 'error' : firms.configured === false && firms.publicFeedAvailable ? 'public' : firms.configured === false ? 'blocked' : 'idle'}`}><i />{firms.state === 'ready' ? 'Data loaded' : firms.state === 'loading' ? 'Loading' : firms.state === 'error' ? 'Unavailable' : firms.configured === false && firms.publicFeedAvailable ? 'Public feed' : firms.configured === false ? 'Key needed' : 'Ready'}</span>
+              <span className={`dashboard-status-pill ${firms.state === 'ready' ? 'ready' : firms.state === 'loading' ? 'loading' : firms.state === 'error' ? 'error' : firms.configured === false && firms.publicFeedAvailable ? 'public' : firms.configured === false ? 'blocked' : 'idle'}`} role="status" aria-live="polite"><i />{firms.state === 'ready' ? 'Data loaded' : firms.state === 'loading' ? 'Loading' : firms.state === 'error' ? 'Unavailable' : firms.configured === false && firms.publicFeedAvailable ? 'Public feed' : firms.configured === false ? 'Setup needed' : 'Ready'}</span>
             </header>
             <div className="dashboard-summary-context"><Map size={13} /><b>{location.name}</b><i /><span>{firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</span></div>
             <div className="dashboard-detection-count">

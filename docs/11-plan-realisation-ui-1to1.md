@@ -155,3 +155,9 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 
 - Les panneaux flottants de Calendar et Terrain reprennent désormais le verre dépoli du Dashboard, Scenario et Live Map : reflets cyan discrets, surface translucide, flou/saturation, reflet de bord et sous-cartes plus légères. Les géométries, commandes et états de données restent identiques.
 - Le contraste du texte et des contrôles reste prioritaire; les états au survol ne changent que le fond et la bordure des couches activables. Build et diff à vérifier dans la tranche courante; une capture navigateur reste nécessaire pour confirmer le rendu sur la carte réelle.
+
+## Avancement — lisibilité du résumé Dashboard
+
+- Le panneau d’activité de la zone a été élargi sur desktop, son verre dépoli et son liseré renforcés, et les chiffres, conditions météo et provenance ont gagné en lisibilité. Le bouton de chargement possède une cible tactile plus grande; l’état sans clé est annoncé comme « Setup needed » et reste accompagné de son explication d’accès aux données.
+- Les dimensions et la densité se réadaptent aux tablettes et mobiles sans déplacer les commandes de carte.
+- Vérification : `npm run build` réussi; `git diff --check` propre. Une nouvelle capture n’a pas été effectuée dans cette tranche.
