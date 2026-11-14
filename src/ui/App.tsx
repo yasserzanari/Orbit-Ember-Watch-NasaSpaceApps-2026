@@ -1075,6 +1075,7 @@ function shiftUtcMonth(month: string, offset: number) {
 
 function CwfisHistoricalPilot() {
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [termsConfirmed, setTermsConfirmed] = useState(false)
   const [observations, setObservations] = useState<{ id: string; acquiredAtUtc: string; sensor: string; satellite: string; source: string; agency: string }[]>([])
   const [message, setMessage] = useState('')
   const load = async () => {
@@ -1104,7 +1105,8 @@ function CwfisHistoricalPilot() {
   const seriesRows = Object.entries(series).map(([name, values]) => ({ name, values, total: Object.values(values).reduce((sum, count) => sum + count, 0) })).sort((a, b) => b.total - a.total)
   const max = Math.max(1, ...seriesRows.flatMap((row) => Object.values(row.values)))
   return <section className="cwfis-pilot-panel" aria-label="CWFIS historical regional context">
-    <header><div><span className="cwfis-kicker"><Database size={13} /> HISTORICAL CONTEXT · PUBLIC WFS</span><h2>Alberta west · May 4–20, 2023</h2><p>Regional hotspot sample near the Pembina Complex origin area · not a fire-specific perimeter match</p></div><button className="dashboard-load-button" onClick={() => void load()} disabled={state === 'loading'}>{state === 'loading' ? 'Loading CWFIS…' : state === 'ready' ? 'Refresh history' : 'Load historical context'}</button></header>
+    <header><div><span className="cwfis-kicker"><Database size={13} /> HISTORICAL CONTEXT · PUBLIC WFS</span><h2>Alberta west · May 4–20, 2023</h2><p>Regional hotspot sample near the Pembina Complex origin area · not a fire-specific perimeter match</p></div><button className="dashboard-load-button" onClick={() => void load()} disabled={state === 'loading' || !termsConfirmed}>{state === 'loading' ? 'Loading CWFIS…' : state === 'ready' ? 'Refresh history' : 'Load historical context'}</button></header>
+    <label className="cwfis-terms-confirm"><input type="checkbox" checked={termsConfirmed} onChange={(event) => setTermsConfirmed(event.target.checked)} /><span>Our team has reviewed the CWFIS End-User Agreement and confirmed this use is covered.</span><a href="https://scifv.scf.rncan.gc.ca/downloads/EUA/End_User_Agreement_gen_EN.html.php" target="_blank" rel="noreferrer">Review agreement</a></label>
     <div className="cwfis-provenance-note"><AlertTriangle size={14} /><span>CWFIS Fire M3 is a mixed-source contextual dataset, not raw NASA FIRMS or independent fire-perimeter truth. Missing dates have unknown coverage; counts are returned detection rows, not fire counts.</span></div>
     {state === 'error' && <p className="cwfis-error">{message}</p>}
     {state === 'ready' && <>
@@ -1113,7 +1115,7 @@ function CwfisHistoricalPilot() {
       <div className="cwfis-day-labels">{days.map((day) => <span key={day}>{day.slice(8)}</span>)}</div>
       <div className="cwfis-source-list"><b>Source provenance</b>{Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]).map(([source, count]) => <span key={source}>{source} <strong>{count.toLocaleString()}</strong></span>)}</div>
       <div className="cwfis-source-list"><b>Satellites / agencies</b>{Object.entries(satelliteCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([satellite, count]) => <span key={satellite}>{satellite} <strong>{count.toLocaleString()}</strong></span>)}{Object.keys(agencyCounts).sort().map((agency) => <span key={agency}>Agency {agency}</span>)}</div>
-      <small className="cwfis-source-citation">Source: <a href="https://cwfis.cfs.nrcan.gc.ca/geoserver/ows" target="_blank" rel="noreferrer">Canadian Wildland Fire Information System · Fire M3 WFS</a></small>
+      <small className="cwfis-source-citation">Canadian Forest Service. 2020. <a href="https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/archive/fireM3_hotspots_metadata_NAP_ISO_19115_2003.pdf" target="_blank" rel="noreferrer">Canadian Wildland Fire Information System (CWFIS)</a>, Natural Resources Canada, Canadian Forest Service, Northern Forestry Centre, Edmonton, Alberta.</small>
     </>}
     {state === 'idle' && <small className="cwfis-idle">Load this short historical window to explore separate MODIS and VIIRS daily records.</small>}
   </section>

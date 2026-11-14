@@ -900,3 +900,7 @@
   background-color: rgba(37,210,216,.08);
 }
 .terrain-map-controls>header { border-bottom-color: rgba(167,220,226,.18); }
+.cwfis-terms-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(177, 219, 224, .16); border-radius: 8px; background: rgba(4, 16, 24, .28); color: #bacbd0; font-size: 9px; line-height: 1.45; }
+.cwfis-terms-confirm input { accent-color: #45c9c2; }
+.cwfis-terms-confirm a { margin-left: auto; color: #8ee0db; }
+@media(max-width:760px) { .cwfis-terms-confirm a { margin-left: 25px; } }
