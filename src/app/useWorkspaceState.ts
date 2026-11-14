@@ -20,6 +20,7 @@ export type WorkspaceState = {
   view: WorkspaceView
   location: WorkspaceLocation
   selectedTime: string | null
+  selectedDate: string | null
   firmsProduct: FirmsProduct
   firmsDays: FirmsDayRange
   windVisible: boolean
@@ -39,11 +40,14 @@ function readWorkspaceState(): WorkspaceState {
   const lon = validCoordinate(params.get('lon'), -180, 180)
   const name = params.get('place')?.trim().slice(0, 80)
   const timestamp = params.get('time')
+  const dateParam = params.get('date')
   const productParam = params.get('product') as FirmsProduct | null
   const daysParam = Number(params.get('days')) as FirmsDayRange
   const includesTimezone = timestamp ? /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) : false
   const date = timestamp ? new Date(includesTimezone ? timestamp : `${timestamp}Z`) : null
   const selectedTime = date && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 16) : null
+  const parsedCalendarDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? new Date(`${dateParam}T00:00:00Z`) : null
+  const selectedDate = parsedCalendarDate && Number.isFinite(parsedCalendarDate.getTime()) && parsedCalendarDate.toISOString().slice(0, 10) === dateParam ? dateParam : null
   const knownLocation = workspaceLocations.find((item) => item.name === name)
   const location = knownLocation ?? (lat !== null && lon !== null
     ? { name: name || `Map point · ${lat.toFixed(3)}°, ${lon.toFixed(3)}°`, lat, lon }
@@ -53,6 +57,7 @@ function readWorkspaceState(): WorkspaceState {
     view: viewParam && views.includes(viewParam) ? viewParam : 'Dashboard',
     location,
     selectedTime,
+    selectedDate,
     firmsProduct: productParam && firmsProducts.includes(productParam) ? productParam : firmsProducts[0],
     firmsDays: firmsDayRanges.includes(daysParam) ? daysParam : 1,
     windVisible: params.get('wind') !== '0',
@@ -68,6 +73,8 @@ function writeWorkspaceState(state: WorkspaceState) {
   url.searchParams.set('place', state.location.name)
   if (state.selectedTime) url.searchParams.set('time', state.selectedTime)
   else url.searchParams.delete('time')
+  if (state.selectedDate) url.searchParams.set('date', state.selectedDate)
+  else url.searchParams.delete('date')
   url.searchParams.set('product', state.firmsProduct)
   url.searchParams.set('days', String(state.firmsDays))
   url.searchParams.set('wind', state.windVisible ? '1' : '0')
@@ -87,8 +94,9 @@ export function useWorkspaceState() {
   useEffect(() => writeWorkspaceState(state), [state])
 
   const setView = useCallback((view: WorkspaceView) => setState((current) => ({ ...current, view })), [])
-  const setLocation = useCallback((location: WorkspaceLocation) => setState((current) => ({ ...current, location, selectedTime: null })), [])
+  const setLocation = useCallback((location: WorkspaceLocation) => setState((current) => ({ ...current, location, selectedTime: null, selectedDate: null })), [])
   const setSelectedTime = useCallback((selectedTime: string | null) => setState((current) => ({ ...current, selectedTime })), [])
+  const setSelectedDate = useCallback((selectedDate: string | null) => setState((current) => ({ ...current, selectedDate })), [])
   const setFirmsProduct = useCallback((firmsProduct: FirmsProduct) => setState((current) => ({ ...current, firmsProduct })), [])
   const setFirmsDays = useCallback((firmsDays: FirmsDayRange) => setState((current) => ({ ...current, firmsDays })), [])
   const setWindVisible = useCallback((windVisible: boolean | ((current: boolean) => boolean)) => setState((current) => ({
@@ -102,6 +110,6 @@ export function useWorkspaceState() {
 
   return {
     ...state,
-    setView, setLocation, setSelectedTime, setFirmsProduct, setFirmsDays, setWindVisible, setTerrainEnabled,
+    setView, setLocation, setSelectedTime, setSelectedDate, setFirmsProduct, setFirmsDays, setWindVisible, setTerrainEnabled,
   }
 }

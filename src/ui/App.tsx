@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import { useWorkspaceState, workspaceLocations } from '../app/useWorkspaceState'
 import type { FirmsProduct, WorkspaceView } from '../app/useWorkspaceState'
 import {
-  Activity, AlertTriangle, CalendarDays, ChevronDown, ChevronRight, CircleHelp,
+  Activity, AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleHelp,
   Clock3, CloudRain, Compass, Database, Flame, Layers3, LocateFixed, Map,
   Menu, Mountain, RefreshCw, Satellite, Search, Wind, X,
 } from 'lucide-react'
@@ -602,9 +603,83 @@ function DashboardBottom({ observations, observationState, source, days, forecas
   </div>
 }
 
+function shiftUtcDay(day: string, offset: number) {
+  const date = new Date(`${day}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + offset)
+  return date.toISOString().slice(0, 10)
+}
+
+function mondayOfUtcWeek(day: string) {
+  const date = new Date(`${day}T00:00:00Z`)
+  const mondayOffset = (date.getUTCDay() + 6) % 7
+  date.setUTCDate(date.getUTCDate() - mondayOffset)
+  return date.toISOString().slice(0, 10)
+}
+
+function shiftUtcMonth(month: string, offset: number) {
+  const date = new Date(`${month}-01T00:00:00Z`)
+  date.setUTCMonth(date.getUTCMonth() + offset)
+  return date.toISOString().slice(0, 7)
+}
+
+function CalendarBoard({ observations, observationState, days, selectedDate, onSelectDate, windowStart, windowEnd }: { observations: FireObservation[]; observationState: 'idle' | 'loading' | 'ready' | 'error'; days: number; selectedDate: string; onSelectDate: (date: string) => void; windowStart: string; windowEnd: string }) {
+  const counts = new globalThis.Map<string, number>()
+  for (const observation of observations) {
+    const day = observation.acquiredAtUtc?.slice(0, 10)
+    if (day) counts.set(day, (counts.get(day) ?? 0) + 1)
+  }
+  const maximum = Math.max(1, ...counts.values())
+  const [month, setMonth] = useState(() => selectedDate.slice(0, 7))
+  useEffect(() => setMonth(selectedDate.slice(0, 7)), [selectedDate])
+  const monthDate = new Date(`${month}-01T00:00:00Z`)
+  const firstVisible = new Date(monthDate)
+  firstVisible.setUTCDate(firstVisible.getUTCDate() - ((monthDate.getUTCDay() + 6) % 7))
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(firstVisible)
+    date.setUTCDate(firstVisible.getUTCDate() + index)
+    const iso = date.toISOString().slice(0, 10)
+    const inQuery = iso >= windowStart && iso <= windowEnd
+    const count = counts.get(iso)
+    const state = observationState === 'ready' && inQuery ? 'covered' : observationState === 'loading' && inQuery ? 'loading' : observationState === 'error' && inQuery ? 'error' : inQuery ? 'not-loaded' : 'outside-window'
+    const label = state === 'covered' ? `${count ?? 0} returned observations` : state === 'loading' ? 'Request in progress' : state === 'error' ? 'Request unavailable' : state === 'not-loaded' ? 'Not queried' : 'Outside selected FIRMS window'
+    return { iso, date, count, inQuery, state, label }
+  })
+  const weekStart = mondayOfUtcWeek(selectedDate)
+  const shownCells = cells.filter((cell) => cell.iso >= weekStart && cell.iso < shiftUtcDay(weekStart, 7))
+  const [mode, setMode] = useState<'month' | 'week'>('month')
+  const rendered = mode === 'month' ? cells : shownCells
+  const weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+
+  return <section className="calendar-board" aria-label="FIRMS observation calendar">
+    <header className="calendar-board-heading"><div><CalendarDays size={17} /><div><b>Activity Calendar — {monthDate.toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'long', year: 'numeric' })}</b><small>{observationState === 'ready' ? `Observed records · ${days} UTC ${days === 1 ? 'day' : 'days'} · ${windowStart} to ${windowEnd}` : observationState === 'loading' ? 'Loading the selected NASA FIRMS window' : observationState === 'error' ? 'Selected FIRMS window is unavailable' : 'Load observations to populate queried dates'}</small></div></div><div className="calendar-board-actions"><div className="calendar-month-nav"><button aria-label="Previous month" title="Previous month" onClick={() => setMonth((value) => shiftUtcMonth(value, -1))}><ChevronLeft size={13} /></button><button aria-label="Next month" title="Next month" onClick={() => setMonth((value) => shiftUtcMonth(value, 1))}><ChevronRight size={13} /></button></div><div className="calendar-mode-toggle"><button className={mode === 'month' ? 'selected' : ''} onClick={() => setMode('month')} aria-pressed={mode === 'month'}>Month</button><button className={mode === 'week' ? 'selected' : ''} onClick={() => setMode('week')} aria-pressed={mode === 'week'}>Week</button></div></div></header>
+    <div className="calendar-grid-wrap"><div className="calendar-weekdays">{weekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}</div><div className={`calendar-grid ${mode === 'week' ? 'week-mode' : ''}`}>{rendered.map((cell) => <button key={cell.iso} className={`calendar-day ${cell.iso === selectedDate ? 'selected' : ''} ${cell.iso.slice(0, 7) !== month ? 'adjacent-month' : ''} ${cell.state} ${cell.state === 'covered' && (cell.count ?? 0) === 0 ? 'zero-records' : ''}`} onClick={() => onSelectDate(cell.iso)} title={`${cell.iso} UTC · ${cell.label}`} aria-label={`${cell.iso}, ${cell.label}`} aria-pressed={cell.iso === selectedDate}><span>{cell.date.getUTCDate()}</span>{cell.state === 'covered' ? <b style={{ '--activity': String((cell.count ?? 0) / maximum) } as CSSProperties}>{(cell.count ?? 0).toLocaleString()}</b> : cell.state === 'loading' ? <i className="calendar-loading-dot" /> : <small>{cell.state === 'outside-window' ? '—' : cell.state === 'error' ? '!' : '·'}</small>}</button>)}</div></div>
+    <aside className="calendar-legend"><span><i className="calendar-legend-count" /> Observations returned</span><span><i className="calendar-legend-empty" /> Queried, no records</span><span><i className="calendar-legend-unknown" /> Not queried / unavailable</span></aside>
+  </section>
+}
+
+function CalendarWeekDetails({ selectedDate, observations, observationState, days, source, windowStart, windowEnd }: { selectedDate: string; observations: FireObservation[]; observationState: 'idle' | 'loading' | 'ready' | 'error'; days: number; source: string; windowStart: string; windowEnd: string }) {
+  const weekStart = mondayOfUtcWeek(selectedDate)
+  const weekDays = Array.from({ length: 7 }, (_, index) => shiftUtcDay(weekStart, index))
+  const inWindow = weekDays.filter((day) => day >= windowStart && day <= windowEnd)
+  const counts = weekDays.map((day) => ({ day, count: observations.filter((observation) => observation.acquiredAtUtc?.slice(0, 10) === day).length, queried: observationState === 'ready' && day >= windowStart && day <= windowEnd }))
+  const weekObservations = observations.filter((observation) => observation.acquiredAtUtc && observation.acquiredAtUtc.slice(0, 10) >= weekStart && observation.acquiredAtUtc.slice(0, 10) < shiftUtcDay(weekStart, 7))
+  const max = Math.max(1, ...counts.filter((item) => item.queried).map((item) => item.count))
+  const end = shiftUtcDay(weekStart, 6)
+  const peak = weekObservations.reduce<FireObservation | null>((current, item) => item.frpMw !== null && (current === null || item.frpMw > (current.frpMw ?? -Infinity)) ? item : current, null)
+  const format = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric' })
+
+  return <>
+    <div className="panel-heading"><div><h2>Selected week details</h2><p>{format(weekStart)} – {format(end)}, {end.slice(0, 4)} · {source.replaceAll('_', ' ')}</p></div><CalendarDays size={18} /></div>
+    <div className="calendar-week-total"><span>{observationState === 'ready' && inWindow.length ? weekObservations.length.toLocaleString() : '—'}</span><div><b>{observationState === 'ready' && inWindow.length ? 'Returned observations' : observationState === 'loading' && inWindow.length ? 'Loading requested days' : 'No queried week data'}</b><small>{inWindow.length} of 7 days fall inside the selected {days}-day FIRMS request</small></div></div>
+    {observationState === 'ready' && inWindow.length > 0 ? <div className="calendar-week-chart" aria-label="Returned FIRMS observations per day">{counts.map(({ day, count, queried }) => <div className="calendar-week-bar" key={day} title={`${day} UTC · ${queried ? `${count} records returned` : 'not queried'}`}><b>{queried ? count.toLocaleString() : '—'}</b><i className={queried && count > 0 ? 'has-count' : ''} style={{ height: `${queried && count ? Math.max(4, (count / max) * 56) : 3}px` }} /><small>{format(day).split(' ')[1]}</small></div>)}</div> : <div className="calendar-detail-empty">{observationState === 'error' ? 'NASA FIRMS could not provide this observation window.' : observationState === 'loading' ? 'The requested observations are loading.' : observationState === 'ready' ? 'No dates in this week were covered by the selected query.' : 'Load the selected product from Dashboard or Live Map; dates without a request remain unknown.'}</div>}
+    {peak && <div className="calendar-peak"><Flame size={15} /><span>Highest FRP in this week</span><b>{peak.frpMw} MW</b><small>{peak.acquiredAtUtc ? new Date(peak.acquiredAtUtc).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'time unavailable'}</small></div>}
+    <div className="calendar-coverage-note"><AlertTriangle size={14} /><span>Coverage percentage and confidence are not supplied as week-level aggregates by this request. Zero returned records is not proof of no fire.</span></div>
+  </>
+}
+
 export function App() {
   const workspace = useWorkspaceState()
-  const { view: active, setView: setActive, location, setLocation, windVisible, setWindVisible, terrainEnabled, setTerrainEnabled, selectedTime, setSelectedTime, firmsProduct, setFirmsProduct, firmsDays, setFirmsDays } = workspace
+  const { view: active, setView: setActive, location, setLocation, windVisible, setWindVisible, terrainEnabled, setTerrainEnabled, selectedTime, setSelectedTime, selectedDate, setSelectedDate, firmsProduct, setFirmsProduct, firmsDays, setFirmsDays } = workspace
   const [navOpen, setNavOpen] = useState(false)
   const [windOverride, setWindOverride] = useState<number | null>(null)
   const [horizon, setHorizon] = useState(6)
@@ -614,7 +689,7 @@ export function App() {
   const windField = useWindField(location.lat, location.lon)
   const firms = useFirms(location.lat, location.lon, firmsProduct, firmsDays)
   useEffect(() => { setWindOverride(null); setElevation({ value: 0, state: 'loading' }) }, [location])
-  useEffect(() => { setActiveDetection(null) }, [location, firms.source])
+  useEffect(() => { setActiveDetection(null) }, [location, firms.source, selectedDate])
   useEffect(() => {
     const controller = new AbortController()
     const params = new URLSearchParams({ latitude: String(location.lat), longitude: String(location.lon) })
@@ -646,6 +721,14 @@ export function App() {
   const visibleHours = hours.slice(forecastStartIndex, forecastStartIndex + 36)
   const hourCount = visibleHours.length
   const peakObservation = firms.observations.reduce<FireObservation | null>((peak, observation) => observation.frpMw !== null && (peak === null || observation.frpMw > (peak.frpMw ?? -Infinity)) ? observation : peak, null)
+  const calendarWindowEnd = firms.fetchedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)
+  const calendarWindowStart = shiftUtcDay(calendarWindowEnd, 1 - firms.days)
+  const calendarSelectedDate = selectedDate ?? calendarWindowEnd
+  const calendarSelectedRecords = firms.observations.filter((observation) => observation.acquiredAtUtc?.slice(0, 10) === calendarSelectedDate)
+  const calendarDateQueried = firms.state === 'ready' && calendarSelectedDate >= calendarWindowStart && calendarSelectedDate <= calendarWindowEnd
+  const visibleObservations = active === 'Calendar'
+    ? calendarDateQueried ? calendarSelectedRecords : []
+    : firms.observations
 
   const moduleTitle = active === 'Field Situation' ? 'Field Situation' : active
   const dashboardPanel = <>
@@ -669,14 +752,11 @@ export function App() {
     : firms.state === 'error'
       ? <div className="firms-error"><AlertTriangle size={15} /><span>{firms.message}{firms.configured === false && <> Request a key at NASA, then save it as <code>FIRMS_MAP_KEY</code> in the server’s local `.env` file.</>}</span></div>
       : <div className="module-empty"><Satellite size={23} /><b>NASA FIRMS observations are not connected</b><p>Load a source for this map extent. The server keeps the MAP_KEY private; without one, the request will remain unavailable.</p><a href="https://firms.modaps.eosdis.nasa.gov/api/area/" target="_blank" rel="noreferrer">FIRMS API requirements <ChevronRight size={13} /></a></div>
-  const moduleBody = active === 'Dashboard' ? dashboardPanel : active === 'Live Map' ? <>
+  const moduleBody = active === 'Dashboard' ? dashboardPanel : active === 'Calendar' ? <CalendarWeekDetails selectedDate={calendarSelectedDate} observations={firms.observations} observationState={firms.state} days={firms.days} source={firms.source} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} /> : active === 'Live Map' ? <>
     <div className="panel-heading"><div><h2>Map layers & observations</h2><p>Map view · {location.name}</p></div><span className="status-tag">{terrainEnabled ? '3D TERRAIN' : '2D MAP'}</span></div>
     <div className="module-section"><div className="module-label">VISIBLE CONTEXT</div><div className="layer-row"><span><Wind size={15} /> Interpolated wind field</span><b className={windField.state === 'ready' && windVisible ? 'layer-on' : ''}>{windVisible ? windField.state.toUpperCase() : 'HIDDEN'}</b></div><div className="layer-row"><span><Mountain size={15} /> Terrain relief</span><b className={terrainEnabled ? 'layer-on' : ''}>{terrainEnabled ? '3D ON' : '2D'}</b></div><div className="layer-row"><span><CloudRain size={15} /> Hourly precipitation</span><b className="layer-on">LIVE</b></div><div className="layer-row"><span><Flame size={15} /> MODIS / VIIRS hotspots</span><b className={firms.observations.length ? 'layer-on' : ''}>{firms.observations.length ? `${firms.observations.length} LOADED` : 'NOT LOADED'}</b></div><p className="module-hint">Wind streamlines are interpolated between 25 Open-Meteo forecast points. Their animation conveys direction and relative speed, not particle travel time.</p></div>
     <div className="module-section"><div className="module-label">NASA FIRMS PRODUCT</div><div className="selected-product"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div><button className="primary-action" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Requesting NASA FIRMS…</> : <><RefreshCw size={14} /> Load detections · {firms.days === 1 ? 'today UTC' : `${firms.days} UTC days`}</>}</button><small className="module-hint">Area query is centered on {location.name}. The selected UTC-day range is sent to NASA FIRMS; products remain separate and dates are not a rolling forecast period.</small>{firms.state !== 'idle' && firmsStatus}</div>
     {activeDetection && <div className="detection-detail"><div className="module-label">SELECTED SATELLITE OBSERVATION</div><b>{activeDetection.source.replaceAll('_', ' ')}</b><span>{activeDetection.latitude.toFixed(4)}°, {activeDetection.longitude.toFixed(4)}°</span><span>{activeDetection.acquiredAtUtc ? new Date(activeDetection.acquiredAtUtc).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : 'Acquisition time unavailable'}</span><div className="detail-grid"><span>Native confidence</span><b>{activeDetection.confidenceNative ?? 'not provided'}</b><span>FRP</span><b>{activeDetection.frpMw === null ? 'not provided' : `${activeDetection.frpMw} MW`}</b><span>Satellite</span><b>{activeDetection.satellite ?? 'not provided'}</b><span>Product version</span><b>{activeDetection.productVersion ?? 'not provided'}</b></div><small>Thermal anomaly observation · not a confirmed incident</small></div>}
-  </> : active === 'Calendar' ? <>
-    <div className="panel-heading"><div><h2>Observation calendar</h2><p>Satellite activity by date</p></div><CalendarDays size={18} /></div>
-    {firmsStatus}<div className="module-section"><div className="module-label">AVAILABLE IN THIS VIEW</div><p className="module-hint">The bottom timeline is the actual hourly weather forecast. It is not a satellite activity calendar and does not substitute for FIRMS observations.</p><div className="source-note"><Clock3 size={14} /><span>Forecast window: {hours.length ? `${new Date(hours[0].time).toISOString().slice(0, 10)} — ${new Date(hours.at(-1)!.time).toISOString().slice(0, 10)} UTC` : 'not loaded'}</span></div></div>
   </> : active === 'Compare' ? <>
     <div className="panel-heading"><div><h2>Sensor comparison</h2><p>MODIS and VIIRS stay separate</p></div><Layers3 size={18} /></div>
     <div className="compare-sensors"><div><b>MODIS</b><span>Terra · Aqua</span><small>FIRMS data unavailable</small></div><div><b>VIIRS</b><span>NOAA-20 · NOAA-21</span><small>FIRMS data unavailable</small></div></div>
@@ -725,17 +805,18 @@ export function App() {
         <div className="global-controls"><label className="control location-control"><LocateFixed size={15} /><select aria-label="Select location" value={workspaceLocations.some((item) => item.name === location.name) ? location.name : '__map__'} onChange={(event) => { const next = workspaceLocations.find((item) => item.name === event.target.value); if (next) setLocation(next) }}>{workspaceLocations.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}{!workspaceLocations.some((item) => item.name === location.name) && <option value="__map__">{location.name}</option>}</select><ChevronDown size={14} /></label><label className="control product-control" title="NASA FIRMS sensor product"><Satellite size={15} /><select aria-label="NASA FIRMS sensor product" value={firmsProduct} onChange={(event) => setFirmsProduct(event.target.value as FirmsProduct)}>{firmsSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><ChevronDown size={14} /></label><label className="control date-control" title="NASA FIRMS UTC observation window"><CalendarDays size={15} /><select aria-label="NASA FIRMS observation window" value={firmsDays} onChange={(event) => setFirmsDays(Number(event.target.value) as 1 | 2 | 3 | 5)}><option value={1}>Today · UTC</option><option value={2}>Last 2 UTC days</option><option value={3}>Last 3 UTC days</option><option value={5}>Last 5 UTC days</option></select><ChevronDown size={14} /></label><button className="help-button" aria-label="Help" title="Satellite detections are observations, not confirmed fires"><CircleHelp size={18} /></button></div>
       </header>
 
-      <section className={`workspace ${active === 'Dashboard' ? 'dashboard-workspace' : ''}`}>
+      <section className={`workspace ${active === 'Dashboard' ? 'dashboard-workspace' : active === 'Calendar' ? 'calendar-workspace' : ''}`}>
         <div className="map-column">
           <div className="map-toolbar"><div className="map-title"><span className="eyebrow-icon"><Map size={15} /></span><div><strong>{location.name}</strong><small>{active === 'Scenario' ? 'Hypothetical inputs · no spread perimeter available' : `${windField.state === 'ready' ? `${windField.nodes.length} point live wind field` : 'Live wind field loading'} · click map to inspect a location`}</small></div></div><div className="map-actions"><button className="map-mode-button" aria-pressed={terrainEnabled} title={terrainEnabled ? 'Switch to flat 2D map' : 'Enable 3D terrain'} onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>{terrainEnabled ? '3D' : '2D'}</span></button><button className={`map-mode-button ${windVisible ? 'mode-active' : ''}`} aria-pressed={windVisible} title={windVisible ? 'Hide animated wind field' : 'Show animated wind field'} onClick={() => setWindVisible((value) => !value)}><Wind size={15} /><span>Wind</span></button><button className="icon-button" title="Search map" aria-label="Search map" onClick={() => document.querySelector<HTMLSelectElement>('.location-control select')?.focus()}><Search size={16} /></button><button className="icon-button" title="Map layers" aria-label="Map layers" onClick={() => setActive('Live Map')}><Layers3 size={16} /></button></div></div>
-          <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={firms.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={setActiveDetection} />
+          <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={setActiveDetection} />
           {active === 'Dashboard' && <section className="dashboard-map-summary" aria-label="Area activity summary"><div className="dashboard-map-kicker"><span>ALBERTA WILDFIRE SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'SOURCE LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false ? 'KEY NOT SET' : 'NOT LOADED'}</div><small>{location.name} · {firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</small><div className="dashboard-detection-count"><span>{firms.state === 'ready' ? firms.observations.length.toLocaleString() : '—'}</span><div><b>Observed detections</b><small>{firms.state === 'ready' ? 'Satellite thermal anomalies' : firms.state === 'loading' ? 'Request in progress' : 'Not confirmed fires'}</small></div></div><div className="dashboard-product-line"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div>{weather && <div className="dashboard-condition-row"><div><Wind size={14} /><span>Wind</span><b>{Math.round(weather.windSpeed)} km/h</b></div><div><CloudRain size={14} /><span>Rain</span><b>{weather.precipitation.toFixed(1)} mm</b></div></div>}{firms.configured === false && <small className="dashboard-key-note">Set FIRMS_MAP_KEY in the server’s local environment to load NASA observations.</small>}<button className="dashboard-load-button" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Loading observations</> : <><RefreshCw size={13} /> {firms.state === 'error' ? 'Retry satellite data' : 'Load satellite data'}</>}</button>{firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC</small>}</section>}
-          <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={firms.state === 'ready' && firms.observations.length ? 'fire-loaded' : ''} /> {firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
+          {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false ? 'KEY NOT SET' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateQueried ? 'Not an incident count' : `${calendarWindowStart} → ${calendarWindowEnd}`}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load()}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the requested window is unknown, not a zero.</small></section>}
+          <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={firms.state === 'ready' && visibleObservations.length ? 'fire-loaded' : ''} /> {active === 'Calendar' ? calendarDateQueried ? `${visibleObservations.length} returned on ${calendarSelectedDate}` : 'Selected date outside loaded window' : firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
         </div>
 
         <aside className="inspector">{moduleBody}</aside>
 
-        {active === 'Dashboard' ? <DashboardBottom observations={firms.observations} observationState={firms.state} source={firms.source} days={firms.days} forecast={hours.slice(safeIndex, safeIndex + 24)} onLoad={() => void firms.load()} /> : <div className="bottom-strip"><div className="timeline-title"><Activity size={16} /><div><b>Weather timeline</b><small>Hourly forecast · wind, rain, temperature</small></div></div><div className="timeline-track forecast-track" aria-label="Hourly forecast selector">{visibleHours.map((hour, index) => { const absoluteIndex = forecastStartIndex + index; return <button key={hour.time} className={`forecast-tick ${absoluteIndex === safeIndex ? 'selected' : ''}`} style={{ height: `${Math.max(12, Math.min(34, 10 + hour.windSpeed * 0.28))}px` }} onClick={() => setSelectedTime(hour.time)} title={`${new Date(hour.time).toISOString().slice(0, 16).replace('T', ' ')} UTC · wind ${Math.round(hour.windSpeed)} km/h · rain ${hour.precipitation.toFixed(1)} mm`} aria-label={`Select ${hour.time} UTC, wind ${Math.round(hour.windSpeed)} kilometers per hour`} /> })}{!hours.length && <span className="timeline-empty">Hourly forecast unavailable</span>}</div><div className="timeline-select"><label htmlFor="forecast-time">{weather ? new Date(weather.time).toISOString().slice(11, 16) + ' UTC' : '—'}</label><input id="forecast-time" type="range" min={forecastStartIndex} max={Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1)} value={Math.min(Math.max(safeIndex, forecastStartIndex), Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1))} onChange={(event) => setSelectedTime(hours[Number(event.target.value)]?.time ?? null)} disabled={!hours.length} aria-label="Select forecast hour" /></div></div>}
+        {active === 'Dashboard' ? <DashboardBottom observations={firms.observations} observationState={firms.state} source={firms.source} days={firms.days} forecast={hours.slice(safeIndex, safeIndex + 24)} onLoad={() => void firms.load()} /> : active === 'Calendar' ? <CalendarBoard observations={firms.observations} observationState={firms.state} days={firms.days} selectedDate={calendarSelectedDate} onSelectDate={setSelectedDate} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} /> : <div className="bottom-strip"><div className="timeline-title"><Activity size={16} /><div><b>Weather timeline</b><small>Hourly forecast · wind, rain, temperature</small></div></div><div className="timeline-track forecast-track" aria-label="Hourly forecast selector">{visibleHours.map((hour, index) => { const absoluteIndex = forecastStartIndex + index; return <button key={hour.time} className={`forecast-tick ${absoluteIndex === safeIndex ? 'selected' : ''}`} style={{ height: `${Math.max(12, Math.min(34, 10 + hour.windSpeed * 0.28))}px` }} onClick={() => setSelectedTime(hour.time)} title={`${new Date(hour.time).toISOString().slice(0, 16).replace('T', ' ')} UTC · wind ${Math.round(hour.windSpeed)} km/h · rain ${hour.precipitation.toFixed(1)} mm`} aria-label={`Select ${hour.time} UTC, wind ${Math.round(hour.windSpeed)} kilometers per hour`} /> })}{!hours.length && <span className="timeline-empty">Hourly forecast unavailable</span>}</div><div className="timeline-select"><label htmlFor="forecast-time">{weather ? new Date(weather.time).toISOString().slice(11, 16) + ' UTC' : '—'}</label><input id="forecast-time" type="range" min={forecastStartIndex} max={Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1)} value={Math.min(Math.max(safeIndex, forecastStartIndex), Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1))} onChange={(event) => setSelectedTime(hours[Number(event.target.value)]?.time ?? null)} disabled={!hours.length} aria-label="Select forecast hour" /></div></div>}
       </section>
       <footer className="app-footer"><span>Weather: Open-Meteo · basemap: OpenStreetMap · 3D terrain: AWS Terrain Tiles · FIRMS: {firms.configured === false ? 'server key not set' : firms.configured ? 'server key configured' : 'checking configuration'}</span><span>Wind field is an hourly forecast visualization, not a fire-spread prediction</span></footer>
     </main>
