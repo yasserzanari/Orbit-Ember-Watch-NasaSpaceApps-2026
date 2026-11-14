@@ -437,3 +437,47 @@
 @media (min-width: 1101px) { .dashboard-workspace .wind-speed-legend { left: auto; right: 60px; width: min(560px,calc(100% - 386px)); min-width: 240px; transform: none; } }
 @media (max-width: 1100px) and (min-width: 761px) { .dashboard-workspace .wind-speed-legend { top: auto; bottom: 12px; left: 12px; right: 12px; width: min(500px,calc(100% - 24px)); min-width: 0; transform: none; }.dashboard-workspace .map-frame:has(.wind-speed-legend) .map-field-badge { bottom: 105px; } }
 @media (max-width: 760px) { .dashboard-workspace .map-frame:has(.wind-speed-legend) .map-field-badge { bottom: 105px; } }
+
+/* A consistent glass surface across the dashboard keeps overlays distinct from the map. */
+.dashboard-workspace .inspector,
+.dashboard-chart-card,
+.dashboard-coverage-note {
+  border-color: var(--glass-border);
+  background: linear-gradient(145deg, var(--glass-surface-raised), var(--glass-surface));
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+}
+.dashboard-workspace .inspector { border-radius: 14px; }
+.dashboard-chart-card,
+.dashboard-coverage-note { border-radius: 13px; }
+.dashboard-chart-heading b { font-size: 11px; }
+.dashboard-chart-heading small,
+.dashboard-chart-empty,
+.dashboard-coverage-note p { font-size: 9px; }
+.dashboard-chart-heading small,
+.dashboard-chart-empty,
+.dashboard-coverage-note p,
+.wind-outlook-range { color: #aabdc2; }
+.dashboard-coverage-note { border-color: color-mix(in srgb, var(--accent-caution) 30%, var(--glass-border)); background: linear-gradient(145deg, rgba(69, 50, 24, .55), var(--glass-surface)); }
+.dashboard-weather-heading { color: #aabdc2; }
+.dashboard-workspace .weather-metric { border-color: var(--glass-border); background: var(--glass-surface-raised); box-shadow: inset 0 1px 0 var(--glass-highlight); }
+.dashboard-workspace .source-note { font-size: 10px; }
+.dashboard-map-summary { background: linear-gradient(145deg, rgba(22, 43, 55, .84), rgba(8, 20, 29, .78)); }
+.dashboard-map-kicker { font-size: 9px; }
+.dashboard-summary-context,
+.dashboard-product-line { font-size: 10px; }
+.dashboard-summary-title>span { font-size: 9px; }
+.dashboard-detection-count small,
+.dashboard-condition-row span,
+.dashboard-map-summary>small { font-size: 9px; }
+.dashboard-freshness { font-size: 9px; }
+@media (max-width: 1100px) and (min-width: 761px) {
+  .dashboard-chart-heading small, .dashboard-chart-empty, .dashboard-coverage-note p { font-size: 8px; }
+}
+@media (max-width: 760px) {
+  .dashboard-workspace .inspector { border-radius: 12px; }
+  .dashboard-map-kicker, .dashboard-summary-title>span { font-size: 8px; }
+  .dashboard-summary-context, .dashboard-product-line { font-size: 9px; }
+  .dashboard-detection-count small, .dashboard-condition-row span, .dashboard-map-summary>small { font-size: 8px; }
+  .dashboard-chart-card, .dashboard-coverage-note { backdrop-filter: blur(12px) saturate(125%); }
+}
