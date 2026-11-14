@@ -65,6 +65,27 @@
 .layer-row svg { color: var(--accent-wind); }
 .layer-row>b { color: #82969f; font: 9px var(--font-data); }
 .layer-row>b.layer-on { color: var(--accent-wind); }
+.live-map-section { display: grid; gap: 5px; margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.live-source-list { display: grid; gap: 5px; }
+.live-check-row { display: grid; min-height: 31px; grid-template-columns: 15px 9px minmax(0,1fr) auto; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid #28404d; border-radius: 6px; background: #0b1923; color: #c3d1d5; font-size: 9px; cursor: pointer; }
+.live-check-row>input,.live-filter-option>input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent-wind); }
+.live-check-row>i { width: 8px; height: 8px; border-radius: 50%; background: var(--sensor-color,#25d2d8); box-shadow: 0 0 8px color-mix(in srgb,var(--sensor-color,#25d2d8) 48%,transparent); }
+.live-check-row>svg { color: var(--accent-wind); }
+.live-check-row>span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-check-row>small { color: #89a0a8; font: 8px var(--font-data); }
+.live-layer-unavailable { display: flex; min-height: 29px; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid #243944; border-radius: 6px; background: #091720; color: #879ba2; font-size: 8px; }
+.live-layer-unavailable svg { flex: 0 0 auto; color: #70858e; }
+.live-layer-unavailable span { flex: 1; }
+.live-layer-unavailable b { color: #d7ae65; font: 7px var(--font-data); }
+.live-filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+.live-filter-group>b { grid-column: 1/-1; margin: 3px 0 1px; color: #aebfc3; font-size: 9px; font-weight: 500; }
+.live-filter-option { display: flex; min-width: 0; align-items: center; gap: 6px; color: #bbcbcf; font-size: 8px; cursor: pointer; }
+.live-filter-option>span { flex: 1; }
+.live-filter-option>small { color: #78909a; font: 7px var(--font-data); }
+.live-map-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-top: 13px; }
+.live-map-stats>div { display: grid; gap: 4px; min-width: 0; padding: 8px; border: 1px solid #28404d; border-radius: 7px; background: #0b1923; }
+.live-map-stats span { color: #90a4ab; font-size: 7px; }
+.live-map-stats b { overflow: hidden; color: #e1ecea; font: 9px var(--font-data); text-overflow: ellipsis; white-space: nowrap; }
 .muted-row { opacity: .7; }
 .module-hint { margin: 3px 2px 0; color: #9aadb4; font-size: 9px; line-height: 1.55; }
 .compare-sensors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 17px; }

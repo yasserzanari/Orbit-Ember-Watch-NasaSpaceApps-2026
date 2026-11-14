@@ -25,6 +25,7 @@ type Weather = {
 
 type ForecastHour = Weather
 type FieldMobileTab = 'Map' | 'Updates' | 'Layers' | 'Report'
+type LiveSensorKey = 'modis-terra' | 'modis-aqua' | 'noaa20' | 'noaa21'
 type WindSample = { time: string; speedKmh: number | null; directionFrom: number | null }
 type WindNode = { id: string; latitude: number; longitude: number; samples: WindSample[] }
 type WindFieldState = { state: 'loading' | 'ready' | 'error'; nodes: WindNode[]; retrievedAt: string | null; error?: string }
@@ -56,6 +57,13 @@ const firmsSources = [
   { id: 'VIIRS_NOAA21_SP', label: 'VIIRS · NOAA-21 · standard processing' },
   { id: 'VIIRS_SNPP_SP', label: 'VIIRS · Suomi-NPP · standard archive' },
   { id: 'MODIS_SP', label: 'MODIS · standard processing' },
+]
+
+const liveSensorOptions: { key: LiveSensorKey; label: string; satellite: string; source: FirmsProduct; color: string }[] = [
+  { key: 'modis-terra', label: 'MODIS · Terra', satellite: 'terra', source: 'MODIS_NRT', color: '#ff7b3d' },
+  { key: 'modis-aqua', label: 'MODIS · Aqua', satellite: 'aqua', source: 'MODIS_NRT', color: '#ffb33f' },
+  { key: 'noaa20', label: 'VIIRS · NOAA-20', satellite: 'noaa-20', source: 'VIIRS_NOAA20_NRT', color: '#28d3d1' },
+  { key: 'noaa21', label: 'VIIRS · NOAA-21', satellite: 'noaa-21', source: 'VIIRS_NOAA21_NRT', color: '#7cbbff' },
 ]
 
 type FirmsCoverage = { product: string; minDate: string; maxDate: string }
@@ -196,6 +204,32 @@ function windDirectionLabel(degrees: number) {
 
 function toWindDirection(degreesFrom: number) {
   return (degreesFrom + 180) % 360
+}
+
+function nativeConfidenceBucket(value: string | null) {
+  const normalized = value?.trim().toLowerCase()
+  if (!normalized) return 'unknown'
+  if (normalized === 'low') return 'low'
+  if (normalized === 'nominal' || normalized === 'medium') return 'nominal'
+  if (normalized === 'high') return 'high'
+  const numeric = Number(normalized)
+  if (!Number.isFinite(numeric)) return 'unknown'
+  return numeric < 30 ? 'low' : numeric < 80 ? 'nominal' : 'high'
+}
+
+function observationDayNight(value: string | null) {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === 'd' || normalized === 'day') return 'day'
+  if (normalized === 'n' || normalized === 'night') return 'night'
+  return 'unknown'
+}
+
+function matchesLiveSensor(observation: FireObservation, sensor: typeof liveSensorOptions[number]) {
+  const satellite = observation.satellite?.trim().toLowerCase().replaceAll('_', '-').replaceAll(' ', '-') ?? ''
+  if (sensor.key === 'modis-terra') return observation.source === 'MODIS_NRT' && (satellite.includes('terra') || !satellite)
+  if (sensor.key === 'modis-aqua') return observation.source === 'MODIS_NRT' && satellite.includes('aqua')
+  if (sensor.key === 'noaa20') return observation.source === 'VIIRS_NOAA20_NRT' && (!satellite || satellite.includes('noaa-20') || satellite.includes('20'))
+  return observation.source === 'VIIRS_NOAA21_NRT' && (!satellite || satellite.includes('noaa-21') || satellite.includes('21'))
 }
 
 type MapPoint = { name: string; lat: number; lon: number }
@@ -560,6 +594,17 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     })
     map.current.getCanvas().style.cursor = 'crosshair'
     map.current.on('click', (event) => {
+      const clusterFeature = map.current?.queryRenderedFeatures(event.point, { layers: ['firms-clusters'] })[0]
+      const clusterId = Number(clusterFeature?.properties?.cluster_id)
+      if (Number.isInteger(clusterId)) {
+        const source = map.current?.getSource('firms-hotspots') as GeoJSONSource | undefined
+        source?.getClusterExpansionZoom(clusterId).then((zoom) => {
+          if (!map.current) return
+          const coordinates = (clusterFeature?.geometry as GeoJSON.Point | undefined)?.coordinates
+          if (coordinates) map.current.easeTo({ center: coordinates as [number, number], zoom: Math.min(zoom, 12), duration: 450 })
+        }).catch(() => undefined)
+        return
+      }
       const pointFeature = map.current?.queryRenderedFeatures(event.point, { layers: ['firms-hotspots'] })[0]
       const observationIndex = Number(pointFeature?.properties?.observationIndex)
       if (Number.isInteger(observationIndex) && observationsRef.current[observationIndex]) {
@@ -608,9 +653,24 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         existing.setData(collection as GeoJSON.FeatureCollection)
         return
       }
-      instance.addSource('firms-hotspots', { type: 'geojson', data: collection })
+      instance.addSource('firms-hotspots', { type: 'geojson', data: collection, cluster: true, clusterRadius: 38, clusterMaxZoom: 9, clusterProperties: { maxFrp: ['max', ['coalesce', ['get', 'frpMw'], 0]] } })
       instance.addLayer({
-        id: 'firms-hotspots', type: 'circle', source: 'firms-hotspots',
+        id: 'firms-clusters', type: 'circle', source: 'firms-hotspots', filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': ['step', ['get', 'point_count'], '#f8ca53', 25, '#f59a3b', 100, '#f2683b'],
+          'circle-radius': ['step', ['get', 'point_count'], 14, 25, 18, 100, 23],
+          'circle-opacity': 0.9,
+          'circle-stroke-color': '#fff1c2',
+          'circle-stroke-width': 1.5,
+        },
+      })
+      instance.addLayer({
+        id: 'firms-cluster-count', type: 'symbol', source: 'firms-hotspots', filter: ['has', 'point_count'],
+        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 10, 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'] },
+        paint: { 'text-color': '#17202a', 'text-halo-color': '#fff2c4', 'text-halo-width': 0.5 },
+      })
+      instance.addLayer({
+        id: 'firms-hotspots', type: 'circle', source: 'firms-hotspots', filter: ['!', ['has', 'point_count']],
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['coalesce', ['get', 'frpMw'], 1], 0, 4, 10, 7, 100, 12],
           'circle-color': ['match', ['get', 'source'], 'MODIS_NRT', '#25d2d8', 'MODIS_SP', '#25d2d8', 'VIIRS_NOAA20_NRT', '#f4b12f', 'VIIRS_NOAA20_SP', '#f4b12f', 'VIIRS_NOAA21_NRT', '#f2683b', 'VIIRS_NOAA21_SP', '#f2683b', 'VIIRS_SNPP_NRT', '#a88bfa', 'VIIRS_SNPP_SP', '#a88bfa', '#f4b12f'],
@@ -939,6 +999,10 @@ export function App() {
   const [fieldMobileTab, setFieldMobileTab] = useState<FieldMobileTab>('Map')
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const [archiveCatalogExpanded, setArchiveCatalogExpanded] = useState(false)
+  const [liveSensors, setLiveSensors] = useState<LiveSensorKey[]>(['modis-terra', 'modis-aqua', 'noaa20', 'noaa21'])
+  const [liveConfidence, setLiveConfidence] = useState<string[]>(['low', 'nominal', 'high', 'unknown'])
+  const [liveDayNight, setLiveDayNight] = useState<string[]>(['day', 'night', 'unknown'])
+  const [liveHotspotsVisible, setLiveHotspotsVisible] = useState(true)
   const [windOverride, setWindOverride] = useState<number | null>(null)
   const [horizon, setHorizon] = useState(6)
   const [compareMode, setCompareMode] = useState<'swipe' | 'side-by-side'>('swipe')
@@ -956,6 +1020,9 @@ export function App() {
   const { hours, retrievedAt, state, retry } = useWeather(location.lat, location.lon)
   const windField = useWindField(location.lat, location.lon)
   const firms = useFirms(location.lat, location.lon, firmsProduct, firmsDays, queryEndDate)
+  const liveModis = useFirms(location.lat, location.lon, 'MODIS_NRT', firmsDays, queryEndDate)
+  const liveNoaa20 = useFirms(location.lat, location.lon, 'VIIRS_NOAA20_NRT', firmsDays, queryEndDate)
+  const liveNoaa21 = useFirms(location.lat, location.lon, 'VIIRS_NOAA21_NRT', firmsDays, queryEndDate)
   const firmsCoverage = useFirmsCoverage(active === 'Data & Sources')
   const firmsArchiveCatalog = useFirmsArchiveCatalog(active === 'Data & Sources')
   const compareA = useFirms(location.lat, location.lon, compareSourceA, firmsDays, queryEndDate)
@@ -970,13 +1037,19 @@ export function App() {
   useEffect(() => { setWindOverride(null); setElevation({ value: 0, state: 'loading' }) }, [location])
   useEffect(() => {
     if (!queryEndDate) return
+    if (active === 'Live Map') {
+      if (liveSensors.some((key) => key === 'modis-terra' || key === 'modis-aqua') && (liveModis.state === 'idle' || liveModis.queryRange?.end !== queryEndDate)) void liveModis.load(queryEndDate)
+      if (liveSensors.includes('noaa20') && (liveNoaa20.state === 'idle' || liveNoaa20.queryRange?.end !== queryEndDate)) void liveNoaa20.load(queryEndDate)
+      if (liveSensors.includes('noaa21') && (liveNoaa21.state === 'idle' || liveNoaa21.queryRange?.end !== queryEndDate)) void liveNoaa21.load(queryEndDate)
+      return
+    }
     if (active === 'Compare') {
       if (compareA.state === 'idle' || compareA.queryRange?.end !== queryEndDate) void compareA.load(queryEndDate)
       if (compareB.state === 'idle' || compareB.queryRange?.end !== queryEndDate) void compareB.load(queryEndDate)
       return
     }
     if (firms.state === 'idle' || firms.queryRange?.end !== queryEndDate) void firms.load(queryEndDate)
-  }, [active, compareA.queryRange?.end, compareA.state, compareB.queryRange?.end, compareB.state, firms.queryRange?.end, firms.state, queryEndDate])
+  }, [active, compareA.queryRange?.end, compareA.state, compareB.queryRange?.end, compareB.state, firms.queryRange?.end, firms.state, liveModis.queryRange?.end, liveModis.state, liveNoaa20.queryRange?.end, liveNoaa20.state, liveNoaa21.queryRange?.end, liveNoaa21.state, liveSensors, queryEndDate])
   useEffect(() => {
     const controller = new AbortController()
     const params = new URLSearchParams({ latitude: String(location.lat), longitude: String(location.lon) })
@@ -1015,9 +1088,19 @@ export function App() {
   const calendarSelectedRecords = firms.observations.filter((observation) => observation.acquiredAtUtc?.slice(0, 10) === calendarSelectedDate)
   const calendarDateQueried = firms.state === 'ready' && calendarSelectedDate >= calendarWindowStart && calendarSelectedDate <= calendarWindowEnd
   const compareObservations = [...compareA.observations, ...compareB.observations]
+  const liveFeeds = [liveModis, liveNoaa20, liveNoaa21]
+  const liveSelectedFeeds = [...new Set(liveSensors.map((key) => key === 'modis-terra' || key === 'modis-aqua' ? 'MODIS_NRT' : key === 'noaa20' ? 'VIIRS_NOAA20_NRT' : 'VIIRS_NOAA21_NRT'))].map((source) => liveFeeds.find((feed) => feed.source === source)!).filter(Boolean)
+  const liveFeedObservations = liveFeeds.flatMap((feed) => feed.state === 'ready' ? feed.observations : [])
+  const liveObservations = liveFeedObservations.filter((observation) => liveSensors.some((key) => {
+    const sensor = liveSensorOptions.find((item) => item.key === key)
+    return sensor ? matchesLiveSensor(observation, sensor) : false
+  }))
+  const filteredLiveObservations = liveObservations.filter((observation) => liveConfidence.includes(nativeConfidenceBucket(observation.confidenceNative)) && liveDayNight.includes(observationDayNight(observation.dayNight)))
+  const liveFeedState = liveSelectedFeeds.some((feed) => feed.state === 'loading') ? 'loading' : liveSelectedFeeds.length > 0 && liveSelectedFeeds.every((feed) => feed.state === 'ready') ? 'ready' : liveSelectedFeeds.some((feed) => feed.state === 'ready') ? 'partial' : liveSelectedFeeds.some((feed) => feed.state === 'error') ? 'error' : 'idle'
+  const livePeakFrp = filteredLiveObservations.reduce<number | null>((peak, observation) => observation.frpMw !== null && (peak === null || observation.frpMw > peak) ? observation.frpMw : peak, null)
   const visibleObservations = active === 'Calendar'
     ? calendarDateQueried ? calendarSelectedRecords : []
-    : active === 'Compare' ? compareObservations : firms.observations
+    : active === 'Compare' ? compareObservations : active === 'Live Map' ? liveHotspotsVisible ? filteredLiveObservations : [] : firms.observations
   const selectCalendarDate = (date: string) => {
     setCalendarDate(date)
     const outsideLoadedWindow = !firms.queryRange || date < firms.queryRange.start || date > firms.queryRange.end
@@ -1026,6 +1109,14 @@ export function App() {
       if (active === 'Compare') { void compareA.load(date); void compareB.load(date) }
       else void firms.load(date)
     }
+  }
+  const loadLiveSensors = (date: string | null = queryEndDate) => {
+    if (liveSensors.includes('modis-terra') || liveSensors.includes('modis-aqua')) void liveModis.load(date)
+    if (liveSensors.includes('noaa20')) void liveNoaa20.load(date)
+    if (liveSensors.includes('noaa21')) void liveNoaa21.load(date)
+  }
+  const toggleLiveFilter = <T extends string,>(values: T[], setValues: (values: T[]) => void, value: T) => {
+    setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value])
   }
 
   const moduleTitle = active === 'Field Situation' ? 'Field Situation' : active
@@ -1045,11 +1136,6 @@ export function App() {
     <div className="important-note"><Flame size={15} /><span>Satellite thermal detections are not confirmed fires. No historical baseline, incident perimeter or suppression status is available here.</span></div>
   </>
 
-  const firmsStatus = firms.state === 'ready'
-    ? <div className="firms-result"><b>{firms.message}</b>{firms.fetchedAt && <small>NASA response retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · source {firms.source}</small>}</div>
-    : firms.state === 'error'
-      ? <div className="firms-error"><AlertTriangle size={15} /><span>{firms.message}{firms.configured === false && <> Request a key at NASA, then save it as <code>FIRMS_MAP_KEY</code> in the server’s local `.env` file.</>}</span></div>
-      : <div className="module-empty"><Satellite size={23} /><b>NASA FIRMS observations are not connected</b><p>Load a source for this map extent. The server keeps the MAP_KEY private; without one, the request will remain unavailable.</p><a href="https://firms.modaps.eosdis.nasa.gov/api/area/" target="_blank" rel="noreferrer">FIRMS API requirements <ChevronRight size={13} /></a></div>
   const fieldMobilePanel = fieldMobileTab === 'Map' ? <section className="field-mobile-panel" aria-label="Current area conditions">
     <header><div><h2>Area awareness</h2><p>{location.name} · conditions for the selected hour</p></div><Compass size={19} /></header>
     <div className="field-mobile-conditions">
@@ -1075,9 +1161,15 @@ export function App() {
   </section> : <FieldReports location={location} wind={weather ? { speedKmh: weather.windSpeed, directionTo: windDirectionLabel(directionTo ?? 0), validAtUtc: weather.time } : null} />
   const isFieldMobile = active === 'Field Situation' && isMobileViewport
   const moduleBody = active === 'Dashboard' ? dashboardPanel : active === 'Calendar' ? <CalendarWeekDetails selectedDate={calendarSelectedDate} observations={firms.observations} observationState={firms.state} days={firms.days} source={firms.source} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} /> : active === 'Live Map' ? <>
-    <div className="panel-heading"><div><h2>Map layers & observations</h2><p>Map view · {location.name}</p></div><span className="status-tag">{terrainEnabled ? '3D TERRAIN' : '2D MAP'}</span></div>
-    <div className="module-section"><div className="module-label">VISIBLE CONTEXT</div><div className="layer-row"><span><Wind size={15} /> Interpolated wind field</span><b className={windField.state === 'ready' && windVisible ? 'layer-on' : ''}>{windVisible ? windField.state.toUpperCase() : 'HIDDEN'}</b></div><div className="layer-row"><span><Mountain size={15} /> Terrain relief</span><b className={terrainEnabled ? 'layer-on' : ''}>{terrainEnabled ? '3D ON' : '2D'}</b></div><div className="layer-row"><span><CloudRain size={15} /> Hourly precipitation</span><b className="layer-on">LIVE</b></div><div className="layer-row"><span><Flame size={15} /> MODIS / VIIRS hotspots</span><b className={firms.observations.length ? 'layer-on' : ''}>{firms.observations.length ? `${firms.observations.length} LOADED` : 'NOT LOADED'}</b></div><p className="module-hint">Wind streamlines are interpolated between 25 Open-Meteo forecast points. Their animation conveys direction and relative speed, not particle travel time.</p></div>
-    <div className="module-section"><div className="module-label">NASA FIRMS PRODUCT</div><div className="selected-product"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div><button className="primary-action" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Requesting NASA FIRMS…</> : <><RefreshCw size={14} /> Load detections · {firms.days === 1 ? 'today UTC' : `${firms.days} UTC days`}</>}</button><small className="module-hint">Area query is centered on {location.name}. The selected UTC-day range is sent to NASA FIRMS; products remain separate and dates are not a rolling forecast period.</small>{firms.state !== 'idle' && firmsStatus}</div>
+    <div className="panel-heading"><div><h2>Map layers & filters</h2><p>Live satellite detections · {location.name}</p></div><span className="status-tag">{terrainEnabled ? '3D TERRAIN' : '2D MAP'}</span></div>
+    <section className="live-map-section"><div className="module-label">DETECTION LAYERS</div><div className="live-source-list">{liveSensorOptions.map((sensor) => {
+      const feed = sensor.source === 'MODIS_NRT' ? liveModis : sensor.source === 'VIIRS_NOAA20_NRT' ? liveNoaa20 : liveNoaa21
+      const count = feed.state === 'ready' ? feed.observations.filter((observation) => matchesLiveSensor(observation, sensor)).length : null
+      return <label className="live-check-row" key={sensor.key}><input type="checkbox" checked={liveSensors.includes(sensor.key)} onChange={() => toggleLiveFilter(liveSensors, setLiveSensors, sensor.key)} /><i style={{ '--sensor-color': sensor.color } as CSSProperties} /><span>{sensor.label}</span><small>{count === null ? feed.state === 'error' ? 'ERROR' : feed.state === 'loading' ? '…' : '—' : count.toLocaleString()}</small></label>
+    })}</div><button className="primary-action" onClick={() => loadLiveSensors()} disabled={liveFeedState === 'loading' || liveSensors.length === 0}>{liveFeedState === 'loading' ? <><span className="spinner" /> Requesting selected sensors…</> : <><RefreshCw size={13} /> {liveFeedState === 'error' || liveFeedState === 'partial' ? 'Retry selected sensors' : 'Load selected sensors'} · {liveSensors.length}</>}</button><small className="module-hint">Products load independently for the selected area and UTC window. Counts describe returned satellite observations, not confirmed fires.</small>{(liveFeedState === 'error' || liveFeedState === 'partial') && <div className="firms-error"><AlertTriangle size={15} /><span>{[...new Set(liveSelectedFeeds.filter((feed) => feed.state === 'error').map((feed) => feed.message))].join(' · ') || 'Some selected sensor products are not available.'}</span></div>}{liveSelectedFeeds.some((feed) => feed.state === 'ready') && <div className="firms-result"><b>{liveObservations.length.toLocaleString()} observations returned before filters</b><small>{liveSelectedFeeds.filter((feed) => feed.state === 'ready').map((feed) => `${feed.source} · ${feed.queryRange?.start ?? '—'} → ${feed.queryRange?.end ?? '—'} UTC`).join(' | ')}</small></div>}</section>
+    <section className="live-map-section"><div className="module-label">OVERLAYS</div><label className="live-check-row"><input type="checkbox" checked={windVisible} onChange={() => setWindVisible(!windVisible)} /><Wind size={14} /><span>Forecast wind field</span><small>{windField.state === 'ready' ? `${windField.nodes.length} pts` : windField.state.toUpperCase()}</small></label><label className="live-check-row"><input type="checkbox" checked={liveHotspotsVisible} onChange={() => setLiveHotspotsVisible((value) => !value)} /><Flame size={14} /><span>Thermal detections</span><small>{filteredLiveObservations.length.toLocaleString()}</small></label><label className="live-check-row"><input type="checkbox" checked={terrainEnabled} onChange={() => setTerrainEnabled(!terrainEnabled)} /><Mountain size={14} /><span>Terrain · 3D elevation</span><small>{terrainEnabled ? 'ON' : 'OFF'}</small></label><div className="live-layer-unavailable"><Layers3 size={14} /><span>Satellite footprints / overpass swaths</span><b>NO VERIFIED LAYER</b></div><div className="live-layer-unavailable"><Map size={14} /><span>Provincial boundary overlay</span><b>NO SOURCE</b></div><p className="module-hint">Wind: Open‑Meteo forecast. Relief: Terrarium elevation. No source is connected for satellite footprints, swath coverage, or official provincial polygons.</p></section>
+    <section className="live-map-section"><div className="module-label">FILTERS · NATIVE VALUES</div><div className="live-filter-group"><b>Confidence</b>{[['high', 'High'], ['nominal', 'Nominal'], ['low', 'Low'], ['unknown', 'Not provided / other']].map(([value, label]) => <label className="live-filter-option" key={value}><input type="checkbox" checked={liveConfidence.includes(value)} onChange={() => toggleLiveFilter(liveConfidence, setLiveConfidence, value)} /><span>{label}</span><small>{liveObservations.filter((observation) => nativeConfidenceBucket(observation.confidenceNative) === value).length}</small></label>)}</div><div className="live-filter-group"><b>Detection time · UTC source flag</b>{[['day', 'Day'], ['night', 'Night'], ['unknown', 'Unknown']].map(([value, label]) => <label className="live-filter-option" key={value}><input type="checkbox" checked={liveDayNight.includes(value)} onChange={() => toggleLiveFilter(liveDayNight, setLiveDayNight, value)} /><span>{label}</span><small>{liveObservations.filter((observation) => observationDayNight(observation.dayNight) === value).length}</small></label>)}</div><small className="module-hint">Confidence values keep their source meaning; numeric MODIS values are bucketed only for display (&lt;30 / 30–79 / ≥80). Unrecognized or absent values remain separately filterable.</small></section>
+    <section className="live-map-stats"><div><span>Visible detections</span><b>{filteredLiveObservations.length.toLocaleString()}</b></div><div><span>Highest FRP</span><b>{livePeakFrp === null ? '—' : `${livePeakFrp.toLocaleString()} MW`}</b></div><div><span>Data status</span><b>{liveFeedState === 'ready' ? 'RETURNED' : liveFeedState.toUpperCase()}</b></div></section>
     {activeDetection && <div className="detection-detail"><div className="module-label">SELECTED SATELLITE OBSERVATION</div><b>{activeDetection.source.replaceAll('_', ' ')}</b><span>{activeDetection.latitude.toFixed(4)}°, {activeDetection.longitude.toFixed(4)}°</span><span>{activeDetection.acquiredAtUtc ? new Date(activeDetection.acquiredAtUtc).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : 'Acquisition time unavailable'}</span>{activeDetection.restoredFromLink && <small>Restored from a share link · this record was not revalidated with NASA FIRMS.</small>}<div className="detail-grid"><span>Native confidence</span><b>{activeDetection.confidenceNative ?? 'not provided'}</b><span>FRP</span><b>{activeDetection.frpMw === null ? 'not provided' : `${activeDetection.frpMw} MW`}</b><span>Satellite</span><b>{activeDetection.satellite ?? 'not provided'}</b><span>Product version</span><b>{activeDetection.productVersion ?? 'not provided'}</b></div><small>Thermal anomaly observation · not a confirmed incident</small></div>}
   </> : active === 'Compare' ? <>
     <div className="panel-heading"><div><h2>Sensor comparison</h2><p>MODIS and VIIRS stay separate</p></div><Layers3 size={18} /></div>
@@ -1127,7 +1219,7 @@ export function App() {
       <header className="topbar">
         <button className="mobile-menu" onClick={() => setNavOpen(true)} aria-label="Open navigation"><Menu size={20} /></button>
         <div className="page-heading"><h1>{moduleTitle}</h1><span>Alberta fire intelligence</span></div>
-        <div className="global-controls"><label className="control location-control"><LocateFixed size={15} /><select aria-label="Select location" value={workspaceLocations.some((item) => item.name === location.name) ? location.name : '__map__'} onChange={(event) => { const next = workspaceLocations.find((item) => item.name === event.target.value); if (next) setLocation(next) }}>{workspaceLocations.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}{!workspaceLocations.some((item) => item.name === location.name) && <option value="__map__">{location.name}</option>}</select><ChevronDown size={14} /></label><label className="control product-control" title="NASA FIRMS sensor product"><Satellite size={15} /><select aria-label="NASA FIRMS sensor product" value={firmsProduct} onChange={(event) => setFirmsProduct(event.target.value as FirmsProduct)}>{firmsSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><ChevronDown size={14} /></label><label className="control observation-date-control" title="NASA FIRMS end date in UTC"><CalendarDays size={15} /><input type="date" aria-label="NASA FIRMS end date in UTC" max={new Date().toISOString().slice(0, 10)} value={queryEndDate ?? new Date().toISOString().slice(0, 10)} onChange={(event) => { const date = event.target.value || null; setQueryEndDate(date); if (date) { if (active === 'Compare') { void compareA.load(date); void compareB.load(date) } else void firms.load(date) } }} /></label><label className="control date-control" title="NASA FIRMS observation window"><CalendarDays size={15} /><select aria-label="NASA FIRMS observation window" value={firmsDays} onChange={(event) => setFirmsDays(Number(event.target.value) as 1 | 2 | 3 | 5)}><option value={1}>1 UTC day</option><option value={2}>Last 2 UTC days</option><option value={3}>Last 3 UTC days</option><option value={5}>Last 5 UTC days</option></select><ChevronDown size={14} /></label><button className="help-button" aria-label="Help" title="Satellite detections are observations, not confirmed fires"><CircleHelp size={18} /></button></div>
+        <div className="global-controls"><label className="control location-control"><LocateFixed size={15} /><select aria-label="Select location" value={workspaceLocations.some((item) => item.name === location.name) ? location.name : '__map__'} onChange={(event) => { const next = workspaceLocations.find((item) => item.name === event.target.value); if (next) setLocation(next) }}>{workspaceLocations.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}{!workspaceLocations.some((item) => item.name === location.name) && <option value="__map__">{location.name}</option>}</select><ChevronDown size={14} /></label><label className="control product-control" title="NASA FIRMS sensor product"><Satellite size={15} /><select aria-label="NASA FIRMS sensor product" value={firmsProduct} onChange={(event) => setFirmsProduct(event.target.value as FirmsProduct)}>{firmsSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><ChevronDown size={14} /></label><label className="control observation-date-control" title="NASA FIRMS end date in UTC"><CalendarDays size={15} /><input type="date" aria-label="NASA FIRMS end date in UTC" max={new Date().toISOString().slice(0, 10)} value={queryEndDate ?? new Date().toISOString().slice(0, 10)} onChange={(event) => { const date = event.target.value || null; setQueryEndDate(date); if (date) { if (active === 'Compare') { void compareA.load(date); void compareB.load(date) } else if (active === 'Live Map') loadLiveSensors(date); else void firms.load(date) } }} /></label><label className="control date-control" title="NASA FIRMS observation window"><CalendarDays size={15} /><select aria-label="NASA FIRMS observation window" value={firmsDays} onChange={(event) => setFirmsDays(Number(event.target.value) as 1 | 2 | 3 | 5)}><option value={1}>1 UTC day</option><option value={2}>Last 2 UTC days</option><option value={3}>Last 3 UTC days</option><option value={5}>Last 5 UTC days</option></select><ChevronDown size={14} /></label><button className="help-button" aria-label="Help" title="Satellite detections are observations, not confirmed fires"><CircleHelp size={18} /></button></div>
       </header>
 
       <section className={`workspace ${active === 'Dashboard' ? 'dashboard-workspace' : active === 'Calendar' ? 'calendar-workspace' : active === 'Compare' ? 'compare-workspace' : active === 'Terrain' ? 'terrain-workspace' : ''} ${active === 'Field Situation' ? 'field-situation-workspace' : ''}`}>
@@ -1143,7 +1235,7 @@ export function App() {
           {active === 'Dashboard' && <section className="dashboard-map-summary" aria-label="Area activity summary"><div className="dashboard-map-kicker"><span>ALBERTA WILDFIRE SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'SOURCE LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false ? 'KEY NOT SET' : 'NOT LOADED'}</div><small>{location.name} · {firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</small><div className="dashboard-detection-count"><span>{firms.state === 'ready' ? firms.observations.length.toLocaleString() : '—'}</span><div><b>Observed detections</b><small>{firms.state === 'ready' ? 'Satellite thermal anomalies' : firms.state === 'loading' ? 'Request in progress' : 'Not confirmed fires'}</small></div></div><div className="dashboard-product-line"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div>{weather && <div className="dashboard-condition-row"><div><Wind size={14} /><span>Wind</span><b>{Math.round(weather.windSpeed)} km/h</b></div><div><CloudRain size={14} /><span>Rain</span><b>{weather.precipitation.toFixed(1)} mm</b></div></div>}{firms.configured === false && <small className="dashboard-key-note">Set FIRMS_MAP_KEY in the server’s local environment to load NASA observations.</small>}<button className="dashboard-load-button" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Loading observations</> : <><RefreshCw size={13} /> {firms.state === 'error' ? 'Retry satellite data' : 'Load satellite data'}</>}</button>{firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC</small>}</section>}
           {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false ? 'KEY NOT SET' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateQueried ? 'Not an incident count' : calendarWindowStart ? `${calendarWindowStart} → ${calendarWindowEnd}` : 'No query window loaded'}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load(calendarSelectedDate)}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the requested window is unknown, not a zero.</small></section>}
           {active === 'Terrain' && <section className="terrain-map-controls"><header><Mountain size={16} /><div><b>Terrain layers</b><small>Map & local analysis</small></div></header><button className="terrain-map-layer" onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>Elevation relief</span><b>{terrainEnabled ? '3D' : '2D'}</b></button><button className="terrain-map-layer" onClick={() => setTransectVisible((value) => !value)}><Activity size={15} /><span>Cross-section A—B</span><b>{transectVisible ? 'ON' : 'OFF'}</b></button><div className="terrain-map-layer static-layer"><Activity size={15} /><span>Local slope sample</span><b>{terrainAnalysis.state === 'ready' ? `${terrainAnalysis.slopeDegrees?.toFixed(1)}°` : terrainAnalysis.state.toUpperCase()}</b></div><div className="terrain-map-layer unavailable-layer"><Layers3 size={15} /><span>Land cover / fuels</span><b>NO SOURCE</b></div><div className="terrain-map-key"><i /> Cross-section · 80 km east–west</div></section>}
-          <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={(active === 'Compare' ? compareObservations.length > 0 : firms.state === 'ready' && visibleObservations.length > 0) ? 'fire-loaded' : ''} /> {active === 'Compare' ? `MODIS ${compareA.state === 'ready' ? compareA.observations.length : '—'} · VIIRS ${compareB.state === 'ready' ? compareB.observations.length : '—'} returned` : active === 'Calendar' ? calendarDateQueried ? `${visibleObservations.length} returned on ${calendarSelectedDate}` : firms.state === 'loading' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Requesting ${calendarSelectedDate}` : firms.state === 'error' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Request failed · ${calendarSelectedDate}` : 'Selected date not queried' : firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
+          <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={(active === 'Compare' ? compareObservations.length > 0 : active === 'Live Map' ? filteredLiveObservations.length > 0 : firms.state === 'ready' && visibleObservations.length > 0) ? 'fire-loaded' : ''} /> {active === 'Compare' ? `MODIS ${compareA.state === 'ready' ? compareA.observations.length : '—'} · VIIRS ${compareB.state === 'ready' ? compareB.observations.length : '—'} returned` : active === 'Live Map' ? liveFeedState === 'ready' ? `${filteredLiveObservations.length} visible · clustered above zoom 9` : liveFeedState === 'loading' ? 'Requesting selected FIRMS sensors' : liveFeedState === 'error' ? 'Selected FIRMS sensors unavailable' : 'Load selected FIRMS sensors' : active === 'Calendar' ? calendarDateQueried ? `${visibleObservations.length} returned on ${calendarSelectedDate}` : firms.state === 'loading' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Requesting ${calendarSelectedDate}` : firms.state === 'error' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Request failed · ${calendarSelectedDate}` : 'Selected date not queried' : firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
         </div>
 
         <aside className={`inspector ${isFieldMobile ? 'field-mobile-inspector' : ''}`}>{isFieldMobile ? fieldMobilePanel : moduleBody}</aside>
