@@ -17,7 +17,7 @@ The application communicates satellite thermal detections, weather observations/
 
 | Capability | Owner | Contract |
 |---|---|---|
-| Select/listbox | shared `Select` primitive (authored) | labels, keyboard arrows/Enter/Escape, focus return, disabled reason |
+| Select/listbox | native HTML `<select>` for compact product and report categories; browser/OS owns popup | labels, native keyboard behavior, visible focus, app-owned form error text |
 | FIRMS observation window | shared topbar end-date + day-range control (native date input + native select; currently rendered by `App`) | Store the selected UTC end date in URL state; request the selected 1–5 day inclusive interval ending on that date. With no explicit end date, request the latest interval. Use the server-returned query bounds as authoritative; never interpret an unrequested or failed date as a valid zero. |
 | AOI drawing | shared map interaction | keyboard alternative through coordinate/search inputs; preview geometry before apply |
 | Sensor selection | shared `SensorFilter` | each satellite separately selectable; unavailable period explains source range |
@@ -25,6 +25,14 @@ The application communicates satellite thermal detections, weather observations/
 | Map layers | shared `LayerControl` | source, date/resolution and visibility state exposed |
 | Notification | shared inline status/live region | status-specific guidance, deduplicated; no raw service errors |
 | Export | shared `ExportMenu` | format, scope and provenance described before download |
+
+## Canonical UI Map
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+|---|---|---|---|---|
+| Select/Listbox | Native HTML `<select>` | `UX-CONTRACT.md` and native browser control | Native for compact product and field-note categories | Keyboard selection and mobile OS popup remain platform-owned |
+| Date | Native date input | Shared UTC observation date contract in `UX-CONTRACT.md` | Native `input[type=date]` | Selected date remains a date-only UTC value in app state |
+| Form | `FieldReports` owns submit validation and local persistence | `src/ui/FieldReports.tsx` | Field note form only | `noValidate`, inline errors, first-invalid focus, local-only draft status |
 
 ## Data states
 
@@ -47,6 +55,7 @@ Data values carry source, product/model version, native units, valid time, retri
 
 - Offline mode is read-only for cached layers and scenario outputs. Every cached layer has a timestamp and an explicit stale state.
 - Field reports are attributed, timestamped observations, held as local drafts until a sync service exists; never claim they are synced or verified prematurely.
+- Field Situation stores drafts only in this browser, caps the collection at 100 notes, and exports JSON with coordinates omitted by default; sharing/sync remains an explicit external step.
 - Location use requires explicit permission and can be hidden from exported reports.
 - Mobile targets favor 44×44 CSS px, high contrast, one-handed access and reduced battery use.
 

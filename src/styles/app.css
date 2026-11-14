@@ -112,6 +112,51 @@
 .field-map-status b { font-size: 11px; }
 .field-map-status span { color: #b4c6cb; font-size: 10px; }
 .field-warning { margin-top: 10px; padding: 10px; border: 1px solid #b1843440; border-radius: 8px; background: #f4b12f0d; }
+.field-report-status { display: flex; align-items: flex-start; gap: 9px; margin-top: 11px; padding: 10px; border: 1px solid #83693655; border-radius: 8px; background: #f4b12f0b; }
+.field-report-status-icon { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 7px; background: #f4b12f16; color: #f0c56e; }
+.field-report-status>div { display: grid; gap: 4px; }
+.field-report-status b { color: #e4c57f; font: 9px var(--font-data); letter-spacing: .04em; }
+.field-report-status small { color: #9db0b5; font-size: 9px; line-height: 1.45; }
+.field-map-status { flex-wrap: wrap; }
+.field-condition-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 9px; }
+.field-condition-grid>div { display: grid; gap: 5px; min-width: 0; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: #0b1923; }
+.field-condition-grid svg { color: var(--accent-wind); }
+.field-condition-grid span { color: #aebdc1; font-size: 9px; }
+.field-condition-grid b { color: #e2eded; font: 10px var(--font-data); overflow-wrap: anywhere; }
+.field-condition-grid small { color: #879ca3; font-size: 8px; }
+.field-report-form { margin-top: 11px; padding: 12px; border: 1px solid #28404d; border-radius: 9px; background: linear-gradient(145deg,#10232d,#0b1821); }
+.field-report-form-heading,.field-reports-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.field-report-form-heading>div { display: grid; gap: 4px; }
+.field-report-form-heading b,.field-reports-list-heading>b { color: #dce9e7; font-size: 11px; }
+.field-report-form-heading small { color: #91a6ac; font-size: 9px; line-height: 1.4; }
+.field-report-form-heading>span { color: var(--accent-wind); font: 8px var(--font-data); white-space: nowrap; }
+.field-text-input { margin-top: 0; }
+.field-note-input { width: 100%; min-height: 82px; padding: 9px; resize: vertical; border: 1px solid var(--border-subtle); border-radius: 7px; outline: none; background: #091720; color: var(--text-primary); font: 10px/1.5 var(--font-ui); }
+.field-note-input.resize-none { resize: none; }
+.field-note-input:focus,.field-text-input:focus { border-color: var(--accent-wind); box-shadow: 0 0 0 2px #25d2d81c; }
+.field-note-input::placeholder,.field-text-input::placeholder { color: #71868e; }
+.field-validation-error { display: block; margin-top: 5px; color: #ffb08b; font-size: 9px; line-height: 1.4; }
+.field-note-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 5px; }
+.field-note-footer>small { color: #879ca3; font-size: 8px; line-height: 1.4; }
+.field-note-footer .primary-action { width: auto; min-width: 142px; min-height: 40px; margin: 0; padding: 0 12px; }
+.field-reports-list-heading { margin: 14px 0 7px; }
+.field-reports-list-heading>div { display: flex; align-items: center; gap: 7px; }
+.field-reports-list-heading button { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid #31505c; border-radius: 7px; background: #10232e; color: #cce5e5; font-size: 9px; cursor: pointer; }
+.field-reports-list-heading button:disabled { opacity: .5; cursor: not-allowed; }
+.field-export-location { display: inline-flex; align-items: center; gap: 5px; color: #aebdc1; font-size: 8px; white-space: nowrap; }
+.field-export-location input { accent-color: var(--accent-wind); }
+.field-reports-list { display: grid; gap: 7px; }
+.field-report-item { display: grid; gap: 5px; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: #0b1923; }
+.field-report-item>div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.field-report-item>div>span { color: #cfe8e7; font-size: 10px; font-weight: 600; }
+.field-report-item>div>button { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #a8b8bb; cursor: pointer; }
+.field-report-item>div>button:hover { border-color: #745244; color: #ffb08b; }
+.field-report-item p { margin: 0; color: #d3dfe0; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.field-report-item small { color: #91a6ac; font-size: 8px; line-height: 1.4; }
+.field-report-item em { color: #e0bb6f; font: 8px var(--font-data); text-transform: uppercase; }
+.field-report-empty { display: flex; align-items: center; gap: 8px; padding: 12px; border: 1px dashed #31505c; border-radius: 8px; color: #91a6ac; font-size: 9px; }
+.field-report-empty svg { color: #71868e; }
+.field-report-form :focus-visible,.field-reports-list :focus-visible,.field-map-status :focus-visible { outline: 2px solid var(--accent-wind); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 .primary-action { display: flex; width: 100%; min-height: 38px; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; border: 1px solid #25d2d85a; border-radius: 8px; background: #25d2d812; color: var(--accent-wind); font-size: 10px; font-weight: 600; cursor: pointer; }
 .primary-action:hover:not(:disabled) { background: #25d2d828; }
@@ -216,3 +261,4 @@
 .terrain-profile-strip { display: grid; min-width: 0; grid-column: 1/-1; grid-template-rows: auto minmax(0,1fr); padding: 9px 13px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--shell-surface); }.terrain-profile-strip>header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.terrain-profile-strip>header>div { display: grid; gap: 3px; }.terrain-profile-strip>header b { display: flex; align-items: center; gap: 6px; color: #dce7e9; font-size: 9px; }.terrain-profile-strip>header b svg { color: var(--accent-wind); }.terrain-profile-strip>header small,.terrain-profile-strip>header>span { color: #8ca2aa; font: 7px var(--font-data); }.terrain-profile-chart { position: relative; min-height: 0; margin: 7px 24px 10px; }.terrain-profile-chart svg { width: 100%; height: 100%; overflow: visible; }.terrain-profile-grid { fill: none; stroke: #304954; stroke-width: .45; vector-effect: non-scaling-stroke; }.terrain-profile-fill { fill: #f4b12f20; }.terrain-profile-line { fill: none; stroke: var(--accent-caution); stroke-width: 2; vector-effect: non-scaling-stroke; }.terrain-profile-max,.terrain-profile-min { position: absolute; left: -27px; color: #8298a1; font: 7px var(--font-data); }.terrain-profile-max { top: 0; }.terrain-profile-min { bottom: 13px; }.terrain-profile-distance { position: absolute; right: 0; bottom: -8px; left: 0; display: flex; justify-content: space-between; color: #9aadb3; font: 7px var(--font-data); }.terrain-profile-state { display: flex; align-items: center; justify-content: center; color: #91a7af; font-size: 8px; text-align: center; }
 @media (max-width: 1100px) and (min-width: 761px) { .terrain-workspace { grid-template-rows: minmax(0,1fr) 140px; }.terrain-map-controls { width: 206px; }.terrain-context-card p { font-size: 7px; } }
 @media (max-width: 760px) { .terrain-workspace { overflow-y: auto; }.terrain-workspace .map-column { min-height: 50dvh; }.terrain-map-controls { top: 8px; left: 8px; width: 194px; gap: 5px; padding: 8px; }.terrain-map-layer { padding: 6px; }.terrain-metric-grid b { font-size: 11px; }.terrain-profile-strip { min-height: 170px; }.terrain-profile-strip>header { align-items: flex-start; }.terrain-profile-strip>header>span { font-size: 6px; }.terrain-profile-chart { margin-right: 18px; margin-left: 27px; } }
+@media (max-width: 760px) { .field-map-status { gap: 8px; padding: 10px; }.field-map-status>div { min-width: 0; }.field-map-status b { font-size: 10px; overflow-wrap: anywhere; }.field-map-status span { font-size: 9px; }.field-condition-grid { gap: 6px; }.field-condition-grid>div { padding: 9px 7px; }.field-condition-grid b { font-size: 9px; }.field-report-form { padding: 10px; }.field-report-form-heading b,.field-reports-list-heading>b { font-size: 12px; }.field-report-form-heading small { font-size: 10px; }.field-report-form .field-label { margin: 12px 0 6px; font-size: 11px; }.field-report-form .module-select { min-height: 42px; font-size: 12px; }.field-note-input { min-height: 92px; font-size: 12px; }.field-note-footer { align-items: stretch; flex-direction: column; }.field-note-footer>small { font-size: 9px; }.field-note-footer .primary-action { width: 100%; min-height: 46px; }.field-reports-list-heading { align-items: flex-start; flex-direction: column; }.field-reports-list-heading>div { width: 100%; justify-content: space-between; }.field-reports-list-heading button { min-height: 42px; }.field-export-location { font-size: 10px; }.field-report-item { padding: 11px; }.field-report-item>div>button { width: 40px; height: 40px; }.field-report-item p { font-size: 12px; }.field-report-item small { font-size: 9px; }.field-report-item em { font-size: 9px; } }

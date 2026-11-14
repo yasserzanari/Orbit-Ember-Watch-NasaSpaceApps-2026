@@ -4,6 +4,7 @@ import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, ImageSource, Map as MapLibreMap } from 'maplibre-gl'
 import { useWorkspaceState, workspaceLocations } from '../app/useWorkspaceState'
 import type { FirmsProduct, WorkspaceView } from '../app/useWorkspaceState'
+import { FieldReports } from './FieldReports'
 import { terrainAspectLabel, terrainTransectCoordinates, useTerrainAnalysis } from '../app/useTerrainAnalysis'
 import type { TerrainAnalysis } from '../app/useTerrainAnalysis'
 import {
@@ -1004,12 +1005,7 @@ export function App() {
     <label className="field-label" htmlFor="horizon">Scenario horizon <b>{horizon} hours</b></label><select id="horizon" className="module-select" value={horizon} onChange={(event) => setHorizon(Number(event.target.value))}><option value={1}>1 hour</option><option value={3}>3 hours</option><option value={6}>6 hours</option><option value={12}>12 hours</option><option value={24}>24 hours</option></select>
     <div className="module-empty compact-empty"><Mountain size={19} /><b>Spread envelope unavailable</b><p>A dated incident perimeter, documented fuel type, fuel moisture, terrain raster and validated FBP model are missing. This view will not draw synthetic fire growth.</p></div>
     <div className="scenario-input-state"><span>Weather input</span><b>{weather ? 'Available · Open-Meteo' : 'Loading'}</b><span>Incident perimeter</span><b>Missing</b><span>FBP fuel & moisture</span><b>Missing</b><span>Validated model</span><b>Not configured</b></div>
-  </> : <>
-    <div className="panel-heading"><div><h2>Field situation</h2><p>Read-only context for field teams</p></div><Compass size={18} /></div>
-    <div className="field-map-status"><Map size={18} /><div><b>{location.name}</b><span>{weather ? `${Math.round(weather.windSpeed)} km/h wind · blowing ${windDirectionLabel(directionTo ?? 0)}` : 'Weather loading'}</span></div></div>
-    <div className="important-note field-warning"><Flame size={15} /><span>No incident perimeter or crew tasking is available. Confirm all operational decisions with incident command.</span></div>
-    <div className="module-section"><div className="module-label">FIELD DATA STATUS</div><div className="layer-row"><span><Wind size={15} /> Weather forecast</span><b className={weather ? 'layer-on' : ''}>{weather ? 'LIVE' : 'LOADING'}</b></div><div className="layer-row muted-row"><span><Satellite size={15} /> Satellite detections</span><b>NOT CONNECTED</b></div><div className="layer-row muted-row"><span><Map size={15} /> Incident perimeter</span><b>NOT AVAILABLE</b></div></div>
-  </>
+  </> : <FieldReports location={location} wind={weather ? { speedKmh: weather.windSpeed, directionTo: windDirectionLabel(directionTo ?? 0), validAtUtc: weather.time } : null} />
 
   return <div className="app-shell">
     <aside className={`sidebar ${navOpen ? 'sidebar-open' : ''}`} aria-label="Primary navigation">
