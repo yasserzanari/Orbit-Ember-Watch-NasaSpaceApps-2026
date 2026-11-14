@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import * as maplibregl from 'maplibre-gl'
-import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
+import type { GeoJSONSource, ImageSource, Map as MapLibreMap } from 'maplibre-gl'
 import { useWorkspaceState, workspaceLocations } from '../app/useWorkspaceState'
 import type { FirmsProduct, WorkspaceView } from '../app/useWorkspaceState'
 import { terrainAspectLabel, terrainTransectCoordinates, useTerrainAnalysis } from '../app/useTerrainAnalysis'
@@ -294,16 +294,79 @@ function createWindParticle(): ImageData {
   canvas.width = 64; canvas.height = 64
   const context = canvas.getContext('2d')
   if (!context) return new ImageData(64, 64)
-  const glow = context.createRadialGradient(34, 32, 2, 34, 32, 29)
-  glow.addColorStop(0, '#efffff')
-  glow.addColorStop(0.16, '#8dffff')
-  glow.addColorStop(0.38, '#3de1e0bb')
-  glow.addColorStop(1, '#27bed500')
-  context.fillStyle = glow
-  context.beginPath(); context.arc(34, 32, 29, 0, Math.PI * 2); context.fill()
-  context.strokeStyle = '#a4ffffcc'; context.lineWidth = 4; context.lineCap = 'round'
-  context.beginPath(); context.moveTo(3, 32); context.lineTo(20, 32); context.stroke()
+  const glow = context.createLinearGradient(12, 32, 54, 32)
+  glow.addColorStop(0, '#ffffff00')
+  glow.addColorStop(0.56, '#e9ffff70')
+  glow.addColorStop(1, '#ffffff')
+  context.shadowColor = '#f5ffff'; context.shadowBlur = 8
+  context.strokeStyle = glow; context.lineWidth = 5; context.lineCap = 'round'
+  context.beginPath(); context.moveTo(11, 32); context.lineTo(54, 32); context.stroke()
+  context.shadowBlur = 0; context.strokeStyle = '#ffffff'; context.lineWidth = 1.7
+  context.beginPath(); context.moveTo(17, 32); context.lineTo(52, 32); context.stroke()
   return context.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+function windSpeedColor(speedKmh: number): [number, number, number] {
+  const stops: Array<[number, number, number, number]> = [
+    [0, 51, 133, 165], [10, 57, 175, 181], [20, 110, 199, 184], [35, 218, 220, 159],
+    [50, 250, 203, 83], [70, 246, 133, 53], [100, 231, 74, 63], [150, 192, 64, 148], [200, 94, 185, 202],
+  ]
+  const value = Math.max(0, Math.min(200, speedKmh))
+  const upperIndex = stops.findIndex(([stop]) => stop >= value)
+  if (upperIndex <= 0) return stops[0].slice(1) as [number, number, number]
+  const lower = stops[upperIndex - 1]
+  const upper = stops[upperIndex]
+  const mix = (value - lower[0]) / (upper[0] - lower[0])
+  return [1, 2, 3].map((channel) => Math.round(lower[channel] + (upper[channel] - lower[channel]) * mix)) as [number, number, number]
+}
+
+function createWindSpeedImage(vectors: WindVector[]) {
+  const size = 96
+  const canvas = document.createElement('canvas')
+  canvas.width = size; canvas.height = size
+  const context = canvas.getContext('2d')
+  if (!context || !vectors.length) return null
+  const bounds = {
+    west: Math.min(...vectors.map((vector) => vector.longitude)), east: Math.max(...vectors.map((vector) => vector.longitude)),
+    south: Math.min(...vectors.map((vector) => vector.latitude)), north: Math.max(...vectors.map((vector) => vector.latitude)),
+  }
+  const image = context.createImageData(size, size)
+  for (let y = 0; y < size; y += 1) {
+    const latitude = bounds.north - (y / (size - 1)) * (bounds.north - bounds.south)
+    for (let x = 0; x < size; x += 1) {
+      const longitude = bounds.west + (x / (size - 1)) * (bounds.east - bounds.west)
+      const vector = interpolateWind(vectors, latitude, longitude)
+      if (!vector) continue
+      const [red, green, blue] = windSpeedColor(vector.speedKmh)
+      const offset = (y * size + x) * 4
+      image.data[offset] = red; image.data[offset + 1] = green; image.data[offset + 2] = blue
+      const edge = Math.min(1, x / 12, y / 12, (size - 1 - x) / 12, (size - 1 - y) / 12)
+      const feather = edge * edge * (3 - 2 * edge)
+      image.data[offset + 3] = Math.round(220 * Math.min(1, 0.54 + vector.speedKmh / 200) * feather)
+    }
+  }
+  context.putImageData(image, 0, 0)
+  return {
+    url: canvas.toDataURL('image/png'),
+    coordinates: [
+      [bounds.west, bounds.north], [bounds.east, bounds.north],
+      [bounds.east, bounds.south], [bounds.west, bounds.south],
+    ] as [[number, number], [number, number], [number, number], [number, number]],
+  }
+}
+
+function ensureWindSpeedLayer(instance: MapLibreMap, vectors: WindVector[]) {
+  const image = createWindSpeedImage(vectors)
+  if (!image) return
+  const source = instance.getSource('wind-speed-raster') as ImageSource | undefined
+  if (source) source.updateImage(image)
+  else {
+    instance.addSource('wind-speed-raster', { type: 'image', ...image })
+    instance.addLayer({
+      id: 'wind-speed-raster', type: 'raster', source: 'wind-speed-raster',
+      paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 180, 'raster-resampling': 'linear' },
+    }, 'wind-vector-arrows')
+  }
 }
 
 function ensureWindLayers(instance: MapLibreMap) {
@@ -329,10 +392,10 @@ function ensureWindLayers(instance: MapLibreMap) {
   if (!instance.getLayer('wind-flow-trails')) instance.addLayer({
     id: 'wind-flow-trails', type: 'line', source: 'wind-flow-trails',
     paint: {
-      'line-color': ['interpolate', ['linear'], ['get', 'speedKmh'], 0, '#59dce0', 18, '#4ac5dc', 38, '#f4b12f', 70, '#f2683b'],
-      'line-width': ['interpolate', ['linear'], ['get', 'speedKmh'], 0, 1.2, 35, 2.3, 70, 3.2],
-      'line-opacity': 0.8,
-      'line-blur': 0.5,
+      'line-color': '#f5ffff',
+      'line-width': ['interpolate', ['linear'], ['get', 'speedKmh'], 0, 1.2, 35, 1.8, 70, 2.5],
+      'line-opacity': 0.88,
+      'line-blur': 0.25,
     },
   })
   if (!instance.getLayer('wind-flow-heads')) instance.addLayer({
@@ -522,7 +585,10 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       if (!instance.getStyle().layers.some((layer) => layer.id === 'osm-raster-base')) return
       if (!instance.getSource('albertaDem')) return
       ensureWindLayers(instance)
-      for (const id of ['wind-vector-arrows', 'wind-flow-trails', 'wind-flow-heads']) instance.setLayoutProperty(id, 'visibility', windVisible ? 'visible' : 'none')
+      if (vectors.length) ensureWindSpeedLayer(instance, vectors)
+      for (const id of ['wind-speed-raster', 'wind-vector-arrows', 'wind-flow-trails', 'wind-flow-heads']) {
+        if (instance.getLayer(id)) instance.setLayoutProperty(id, 'visibility', windVisible ? 'visible' : 'none')
+      }
       if (!windVisible || !vectors.length) {
         ;(instance.getSource('wind-vector-grid') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
         ;(instance.getSource('wind-flow-trails') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
@@ -607,11 +673,19 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
   }, [lat, lon])
 
   const direction = windDirection === undefined ? undefined : toWindDirection(windDirection)
+  const windVectors = windVectorsAt(windNodes, windTime)
+  const meanWindSpeed = windVectors.length ? windVectors.reduce((total, vector) => total + vector.speedKmh, 0) / windVectors.length : null
   return <div className={`map-frame ${terrainEnabled ? 'terrain-active' : 'terrain-flat'}`}>
     <div ref={element} className="map-canvas" aria-label="Map centered on the selected Alberta area" />
     <div className="map-coordinates"><Compass size={13} /> {lat.toFixed(3)}° N · {Math.abs(lon).toFixed(3)}° W</div>
     {direction !== undefined && !windVisible && <div className="map-wind" style={{ transform: `rotate(${direction}deg)` }} aria-label={`Wind blows toward ${windDirectionLabel(direction)}`}><Wind size={24} /></div>}
     <div className="map-field-badge"><span className={windVisible && windNodes.length ? 'field-live-dot' : ''} />{windVisible ? `${windNodes.length || '—'}-point wind field` : 'Wind field hidden'} · {terrainEnabled ? '3D relief' : '2D'}</div>
+    {windVisible && windNodes.length > 0 && <div className="wind-speed-legend" aria-label="Wind speed scale in kilometres per hour">
+      <div className="wind-speed-legend-heading"><span><Wind size={12} /> WIND SPEED</span><b>{meanWindSpeed === null ? '—' : `${Math.round(meanWindSpeed)} km/h avg`}</b></div>
+      <div className="wind-speed-ramp" />
+      <div className="wind-speed-ticks"><span>0</span><span>20</span><span>40</span><span>60</span><span>100</span><span>200+</span></div>
+      <small>Colour = speed · white streaks = flow direction</small>
+    </div>}
     <div className="map-caption">Basemap © OpenStreetMap · Terrain © Mapzen · Wind: Open-Meteo</div>
   </div>
 }
