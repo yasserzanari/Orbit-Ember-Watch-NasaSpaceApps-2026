@@ -19,10 +19,13 @@ npm install
 npm run dev
 ```
 
-Pour générer la version statique : `npm run build` (sortie dans `dist/`).
+`npm run dev` lance le frontend et l’API locale. Pour servir la version compilée avec l’API FIRMS : `npm run build`, puis `npm start`.
+
+Pour activer NASA FIRMS, demander une MAP_KEY gratuite sur [le portail officiel NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/api/map_key/), copier `.env.example` vers `.env`, puis renseigner `FIRMS_MAP_KEY`. La clé est lue uniquement par le serveur Node; elle ne doit jamais être préfixée par `VITE_`, committée ou collée dans une conversation. Sans clé, l’interface annonce clairement que le flux n’est pas disponible.
 
 ## Structure
 
+- `server/` — serveur Node, app statique de production et proxy FIRMS protégé côté serveur
 - `src/` — application web React + TypeScript + Vite, carte MapLibre et adaptateurs météo/altitude
 - `public/data/` — instantanés et agrégats publiables pour la démo
 - `scripts/` — acquisition, validation et agrégation des données
@@ -38,8 +41,8 @@ Pour générer la version statique : `npm run build` (sortie dans `dist/`).
 
 ## État actuel
 
-Le shell cartographique plein écran, la navigation entre les vues, le choix de quatre villes de l’Alberta, le fond cartographique, la prévision horaire Open-Meteo (vent, rafales, pluie, température, humidité relative), l’altitude ponctuelle, les états des sources, et un formulaire de sensibilité au vent sont implémentés. Le curseur horaire pilote les valeurs météo et le vecteur de vent.
+Le shell cartographique plein écran, la navigation entre les vues, le choix de quatre villes de l’Alberta ou d’un point cliqué sur la carte, le relief 3D MapLibre alimenté par le DEM AWS Terrarium, l’ombrage du relief et l’altitude ponctuelle sont implémentés. Le champ de vent interroge 25 points Open-Meteo et interpole leurs composantes vectorielles pour afficher les flèches locales et un flux de particules animé. La timeline horaire pilote simultanément les valeurs météo, les flèches et l’animation; des commandes permettent de masquer le vent ou de repasser en carte 2D. La vitesse visuelle des particules est relative et n’est ni un temps de parcours ni une propagation de feu. Le serveur valide les demandes FIRMS, garde la MAP_KEY côté serveur, met les réponses en cache deux minutes et normalise les lignes CSV dans un schéma traçable.
 
-NASA FIRMS n’est pas encore connecté : les hotspots, agrégats, comparaisons MODIS/VIIRS et les calendriers de détections ne sont pas disponibles. Le scénario n’est pas une simulation de propagation : il expose les entrées météo et bloque l’enveloppe de progression tant qu’un périmètre daté, des combustibles, l’humidité adaptée, le relief et un moteur validé ne sont pas intégrés. Les valeurs fictives des maquettes ne sont pas affichées comme des observations.
+L’intégration NASA FIRMS est prête, mais nécessite votre MAP_KEY dans `.env` avant que des hotspots puissent être récupérés. Les agrégats, comparaisons MODIS/VIIRS et calendriers de détections restent à construire. Le scénario n’est pas une simulation de propagation : il expose les entrées météo et bloque l’enveloppe de progression tant qu’un périmètre daté, des combustibles, l’humidité adaptée, le relief et un moteur validé ne sont pas intégrés. Les valeurs fictives des maquettes ne sont pas affichées comme des observations.
 
 Voir [le plan d’implémentation](PLAN-IMPLEMENTATION.md), [le design system](DESIGN.md) et [le contrat UX](UX-CONTRACT.md) pour les prochaines tranches et critères d’acceptation.
