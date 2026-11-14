@@ -1,6 +1,8 @@
 import { createServer } from 'node:http'
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { createReadStream, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { createInterface } from 'node:readline'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -13,6 +15,18 @@ const allowedSources = new Set([
   'VIIRS_NOAA21_NRT', 'VIIRS_NOAA21_SP',
   'VIIRS_SNPP_NRT', 'VIIRS_SNPP_SP',
 ])
+const satellitesBySource = {
+  MODIS_NRT: new Set(['A', 'T']), MODIS_SP: new Set(['A', 'T']),
+  VIIRS_NOAA20_NRT: new Set(['N20']), VIIRS_NOAA20_SP: new Set(['N20']),
+  VIIRS_NOAA21_NRT: new Set(['N21']), VIIRS_NOAA21_SP: new Set(['N21']),
+  VIIRS_SNPP_NRT: new Set(['NPP']), VIIRS_SNPP_SP: new Set(['NPP']),
+}
+const satelliteAliases = {
+  MODIS: { A: 'A', AQUA: 'A', T: 'T', TERRA: 'T' },
+  VIIRS_NOAA20: { N20: 'N20', '1': 'N20', J1: 'N20', NOAA20: 'N20' },
+  VIIRS_NOAA21: { N21: 'N21', '2': 'N21', J2: 'N21', NOAA21: 'N21' },
+  VIIRS_SNPP: { NPP: 'NPP', SNPP: 'NPP', SUOMINPP: 'NPP', N: 'NPP' },
+}
 const publicNrtFeeds = new Map([
   ['MODIS_NRT', 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Canada_7d.csv'],
   ['VIIRS_NOAA20_NRT', 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Canada_7d.csv'],
@@ -182,7 +196,7 @@ async function getPublicNrtFirms(response, { source, bbox, days, requestedStartD
   const maxFeedDate = feedDates.at(-1)
   if (!minFeedDate || !maxFeedDate) return json(response, 502, { code: 'firms_public_feed_empty', message: 'NASA FIRMS public near-real-time feed did not contain dated observations.' })
   if (queryStartDate < minFeedDate) {
-    return json(response, 422, { code: 'firms_public_feed_date_limit', message: `The keyless NASA FIRMS feed contains data from ${minFeedDate} through ${maxFeedDate} UTC only. Choose a window within those dates or configure FIRMS_MAP_KEY for a date-specific request.` })
+    return getLocalArchiveFirms(response, { source, bbox, days, queryStartDate, queryEndDate, publicFeedRange: { minDate: minFeedDate, maxDate: maxFeedDate } })
   }
 
   const [west, south, east, north] = bbox
@@ -209,6 +223,186 @@ async function getPublicNrtFirms(response, { source, bbox, days, requestedStartD
   }, { 'x-data-cache': 'public-feed' })
 }
 
+function validHash(value) { return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) }
+
+async function sha256File(filePath) {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk)
+  return hash.digest('hex')
+}
+
+function productVersionMatchesSource(version, source) {
+  if (version === null || version === undefined || String(version).trim() === '') return true
+  const realtimeVersion = /(?:URT|RT|NRT)$/i.test(String(version).trim())
+  return source.endsWith('_NRT') ? realtimeVersion : !realtimeVersion
+}
+
+function normalizeSatelliteForSource(source, value) {
+  if (typeof value !== 'string') return null
+  const platform = source.startsWith('MODIS_') ? 'MODIS' : source.startsWith('VIIRS_NOAA20_') ? 'VIIRS_NOAA20' : source.startsWith('VIIRS_NOAA21_') ? 'VIIRS_NOAA21' : 'VIIRS_SNPP'
+  const normalized = value.trim().toUpperCase().replace(/[\s-]+/g, '')
+  return satelliteAliases[platform][normalized] ?? null
+}
+
+function normalizeArchivedObservation(record, source, importId, lineNumber) {
+  if (!record || typeof record !== 'object' || !Number.isFinite(record.latitude) || record.latitude < -90 || record.latitude > 90
+    || !Number.isFinite(record.longitude) || record.longitude < -180 || record.longitude > 180
+    || typeof record.acquiredAtUtc !== 'string' || !Number.isFinite(Date.parse(record.acquiredAtUtc))
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(record.acquiredAtUtc)
+    || !Number.isFinite(record.frpMw) || record.frpMw < 0 || typeof record.satellite !== 'string'
+    || !satellitesBySource[source].has(record.satellite.trim().toUpperCase())) return null
+  const expectedInstrument = source.startsWith('MODIS_') ? 'MODIS' : 'VIIRS'
+  if (record.instrument !== expectedInstrument || !record.native || typeof record.native !== 'object'
+    || (record.native.version && record.productVersion !== record.native.version)
+    || (record.native.satellite && normalizeSatelliteForSource(source, record.native.satellite) !== record.satellite.trim().toUpperCase())
+    || (record.native.instrument && record.native.instrument.trim().toUpperCase() !== expectedInstrument)
+    || !productVersionMatchesSource(record.productVersion, source)) return null
+  const nativeForDedupe = { ...record.native }
+  if (typeof nativeForDedupe.satellite === 'string') {
+    nativeForDedupe.satellite = normalizeSatelliteForSource(source, nativeForDedupe.satellite) ?? nativeForDedupe.satellite.trim().toUpperCase()
+  }
+  const nativeCanonical = JSON.stringify(Object.fromEntries(Object.entries(nativeForDedupe).sort(([a], [b]) => a.localeCompare(b))))
+  return {
+    id: `${source}:${importId}:${lineNumber}`,
+    latitude: record.latitude,
+    longitude: record.longitude,
+    source,
+    satellite: record.satellite.trim(),
+    instrument: record.instrument,
+    acquiredAtUtc: record.acquiredAtUtc,
+    confidenceNative: record.confidenceNative ?? null,
+    frpMw: record.frpMw,
+    brightness4: numberOrNull(record.native.bright_ti4 ?? record.native.bright_t21 ?? record.native.brightness),
+    brightness5: numberOrNull(record.native.bright_ti5 ?? record.native.bright_t31),
+    scanKm: numberOrNull(record.native.scan),
+    trackKm: numberOrNull(record.native.track),
+    dayNight: record.dayNight ?? null,
+    productVersion: record.productVersion ?? null,
+    nativeCanonical,
+  }
+}
+
+async function getLocalArchiveFirms(response, { source, bbox, days, queryStartDate, queryEndDate, publicFeedRange = null }) {
+  const manifestDir = path.join(root, 'data', 'manifests', 'firms')
+  let names
+  try { names = await readdir(manifestDir) } catch (error) {
+    if (error?.code !== 'ENOENT') return json(response, 500, { code: 'local_archive_unavailable', message: 'The local FIRMS archive catalog could not be read.' })
+    names = []
+  }
+  const productPrefix = `${source.toLowerCase()}-`
+  const candidates = names.filter((name) => name.startsWith(productPrefix) && name.endsWith('.manifest.json')).sort().slice(0, 500)
+  const [west, south, east, north] = bbox
+  const observations = []
+  const dedupe = new Set()
+  const imports = []
+  let invalidImportCount = 0
+  let tooMany = false
+
+  for (const name of candidates) {
+    const importId = name.slice(0, -'.manifest.json'.length)
+    if (!/^[a-z0-9_-]{1,100}$/.test(importId)) { invalidImportCount += 1; continue }
+    let manifest, qa
+    try {
+      [manifest, qa] = await Promise.all([
+        readFile(path.join(manifestDir, name), 'utf8').then(JSON.parse),
+        readFile(path.join(manifestDir, `${importId}.qa.json`), 'utf8').then(JSON.parse),
+      ])
+    } catch { invalidImportCount += 1; continue }
+    if (!manifest || typeof manifest !== 'object') { invalidImportCount += 1; continue }
+    if (manifest.product !== source) continue
+    const observed = manifest.observed
+    if (manifest.schemaVersion !== 1 || manifest.importId !== importId || !validHash(manifest.input?.sha256)
+      || !validHash(manifest.normalized?.sha256) || !observed
+      || !Number.isSafeInteger(manifest.input?.bytes) || manifest.input.bytes < 1
+      || !Number.isSafeInteger(manifest.normalized?.bytes) || manifest.normalized.bytes < 1
+      || !Number.isSafeInteger(observed.rowsAccepted) || observed.rowsAccepted < 1
+      || !Number.isSafeInteger(observed.rowsRead) || observed.rowsRead < 1
+      || !Number.isSafeInteger(observed.rowsRejected) || observed.rowsRejected < 0
+      || !Number.isSafeInteger(observed.rowsDuplicate) || observed.rowsDuplicate < 0
+      || observed.rowsAccepted + observed.rowsRejected + observed.rowsDuplicate !== observed.rowsRead
+      || !validateUtcDate(observed.minDateUtc) || !validateUtcDate(observed.maxDateUtc) || observed.minDateUtc > observed.maxDateUtc
+      || !qa || typeof qa !== 'object' || qa.importId !== importId || qa.product !== source || qa.rawSha256 !== manifest.input.sha256
+      || qa.normalizedSha256 !== manifest.normalized.sha256 || qa.rowsRead !== observed.rowsRead
+      || qa.rowsAccepted !== observed.rowsAccepted || qa.rowsRejected !== observed.rowsRejected || qa.rowsDuplicate !== observed.rowsDuplicate
+      || !['accepted', 'accepted_with_exclusions'].includes(qa.status)) { invalidImportCount += 1; continue }
+    if (observed.maxDateUtc < queryStartDate || observed.minDateUtc > queryEndDate) continue
+
+    const expectedRawPath = path.join(root, 'data', 'private', 'firms', 'raw', source, `${importId}.csv`)
+    const expectedPath = path.join(root, 'data', 'private', 'firms', 'normalized', source, `${importId}.jsonl`)
+    if (manifest.input?.path !== path.relative(root, expectedRawPath)
+      || manifest.normalized?.path !== path.relative(root, expectedPath)) { invalidImportCount += 1; continue }
+    try {
+      const [normalizedStat, rawStat] = await Promise.all([
+        stat(expectedPath),
+        stat(expectedRawPath),
+      ])
+      if (!normalizedStat.isFile() || !rawStat.isFile()
+        || normalizedStat.size !== manifest.normalized.bytes || rawStat.size !== manifest.input.bytes
+        || await sha256File(expectedRawPath) !== manifest.input.sha256) throw new Error('missing archive file or raw source hash mismatch')
+    } catch { invalidImportCount += 1; continue }
+
+    const hash = createHash('sha256')
+    const importMatches = []
+    const importDedupe = new Set()
+    let lineNumber = 0
+    let corrupt = false
+    let importTooMany = false
+    try {
+      const lines = createInterface({ input: createReadStream(expectedPath), crlfDelay: Infinity })
+      for await (const line of lines) {
+        hash.update(`${line}\n`)
+        lineNumber += 1
+        if (!line) { corrupt = true; break }
+        let parsed
+        try { parsed = JSON.parse(line) } catch { corrupt = true; break }
+        const observation = normalizeArchivedObservation(parsed, source, importId, lineNumber)
+        const day = observation?.acquiredAtUtc.slice(0, 10)
+        if (!observation || !validateUtcDate(day) || day < observed.minDateUtc || day > observed.maxDateUtc) { corrupt = true; break }
+        if (day < queryStartDate || day > queryEndDate || observation.longitude < west || observation.longitude > east
+          || observation.latitude < south || observation.latitude > north) continue
+        const key = createHash('sha256').update(JSON.stringify([source, observation.nativeCanonical])).digest('hex')
+        if (dedupe.has(key) || importDedupe.has(key)) continue
+        importDedupe.add(key)
+        if (observations.length + importMatches.length >= 3000) { importTooMany = true; continue }
+        importMatches.push({ key, observation })
+      }
+    } catch { corrupt = true }
+    if (corrupt || lineNumber !== observed.rowsAccepted || hash.digest('hex') !== manifest.normalized.sha256) { invalidImportCount += 1; continue }
+    if (importTooMany) tooMany = true
+
+    for (const item of importMatches) {
+      dedupe.add(item.key)
+      const { nativeCanonical: _nativeCanonical, ...publicObservation } = item.observation
+      observations.push(publicObservation)
+    }
+    imports.push({
+      importId, product: source, sourceFile: path.basename(String(manifest.sourceFile || 'FIRMS archive.csv')).slice(0, 160),
+      sourceUrl: typeof manifest.sourceUrl === 'string' ? manifest.sourceUrl : null,
+      sourceRetrievedAtUtc: typeof manifest.sourceRetrievedAtUtc === 'string' && Number.isFinite(Date.parse(manifest.sourceRetrievedAtUtc)) ? new Date(manifest.sourceRetrievedAtUtc).toISOString() : null,
+      observedStartDate: observed.minDateUtc, observedEndDate: observed.maxDateUtc,
+      rowsAccepted: observed.rowsAccepted, rowsRejected: observed.rowsRejected, rowsDuplicate: observed.rowsDuplicate,
+      sourceSha256: manifest.input.sha256,
+    })
+  }
+
+  if (tooMany) return json(response, 413, { code: 'local_archive_result_too_large', message: 'The local archive query matched more than 3,000 detections. Choose a smaller area or a shorter date window.' })
+  if (invalidImportCount > 0 && imports.length === 0) return json(response, 500, { code: 'local_archive_integrity_error', message: 'Matching local FIRMS archive files failed QA or integrity checks; re-import the affected source before querying it.' })
+  if (imports.length === 0) return json(response, 404, {
+    code: 'local_archive_not_found',
+    message: `No accepted local ${source} archive covers ${queryStartDate} through ${queryEndDate}. Configure FIRMS_MAP_KEY or import a matching NASA CSV archive locally.${publicFeedRange ? ` The public NRT feed covers ${publicFeedRange.minDate} through ${publicFeedRange.maxDate}.` : ''}`,
+  })
+
+  observations.sort((a, b) => a.acquiredAtUtc.localeCompare(b.acquiredAtUtc) || a.id.localeCompare(b.id))
+  return json(response, 200, {
+    source, bbox, dayRange: days, queryStartDate, queryEndDate,
+    fetchedAtUtc: new Date().toISOString(), count: observations.length, observations,
+    accessMode: 'local-validated-archive', imports,
+    invalidImportCount,
+    coverageState: 'unknown',
+    caveat: 'A date or area with no returned detections is not evidence of no fire; this archive has no observation-coverage denominator.',
+  }, { 'x-data-cache': 'local-archive' })
+}
+
 async function getFirms(requestUrl, response) {
   if (requestUrl.searchParams.has('map_key') || requestUrl.searchParams.has('key')) {
     return json(response, 400, { code: 'secret_in_query', message: 'Do not send a FIRMS key from the browser.' })
@@ -225,7 +419,11 @@ async function getFirms(requestUrl, response) {
   if (requestedStartDate && shiftUtcDay(requestedStartDate, days - 1) > todayUtc) return json(response, 400, { code: 'future_date_window', message: 'The selected FIRMS date window cannot extend into the future.' })
 
   const key = process.env.FIRMS_MAP_KEY
-  if (!key) return getPublicNrtFirms(response, { source, bbox, days, requestedStartDate, todayUtc })
+  if (!key) {
+    if (publicNrtFeeds.has(source)) return getPublicNrtFirms(response, { source, bbox, days, requestedStartDate, todayUtc })
+    if (!requestedStartDate) return json(response, 400, { code: 'archive_date_required', message: 'Choose a UTC start date to query this local archive product, or configure FIRMS_MAP_KEY for live FIRMS access.' })
+    return getLocalArchiveFirms(response, { source, bbox, days, queryStartDate: requestedStartDate, queryEndDate: shiftUtcDay(requestedStartDate, days - 1) })
+  }
 
   const cacheKey = JSON.stringify([source, bbox, days, requestedStartDate])
   const cached = cache.get(cacheKey)

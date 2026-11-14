@@ -25,7 +25,11 @@ Orbit Ember Watch aide à explorer et comparer des détections MODIS et VIIRS sa
 
 ## Conditions et limites
 
-- Les CSV publics utilisés sans clé couvrent seulement les sept derniers jours au Canada; l’API de disponibilité et les fenêtres plus anciennes nécessitent `FIRMS_MAP_KEY` côté serveur.
+- Les CSV publics utilisés sans clé couvrent seulement les sept derniers jours au Canada. Une fenêtre historique ne fonctionne sans clé que si une archive locale correspondante a été importée et acceptée; sinon elle requiert `FIRMS_MAP_KEY` côté serveur. Une archive peut être partielle : couverture inconnue.
 - Aucune ligne retournée ne signifie pas absence de feu. Le flux FIRMS n’est pas un dénominateur de couverture.
 - Les résultats sont des détections NRT; ils ne remplacent pas un historique standard science-quality.
 - Le scénario ne produit pas de prévision opérationnelle de propagation.
+
+## Préparer un historique sans MAP_KEY
+
+Pour alimenter la vue historique, demander un export CSV depuis le [portail NASA FIRMS Archive Download](https://firms.modaps.eosdis.nasa.gov/download/). NASA prend en charge une authentification Earthdata ou par code envoyé par courriel; le lien de téléchargement est fourni une fois la demande traitée. Importer ensuite le CSV original non compressé avec `npm run data:firms:ingest -- --file <CSV> --product <PRODUIT>`, puis générer les séries avec `npm run data:firms:aggregate`. Les données et agrégats restent sous `data/private/firms/`, ignoré par Git; ne publier que les sorties autorisées par la citation et la licence du produit.

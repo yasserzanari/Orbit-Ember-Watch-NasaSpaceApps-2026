@@ -6,7 +6,7 @@ Construire l’application cartographique montrée dans les huit maquettes de `d
 
 ### Accès FIRMS vérifié au 14 novembre 2026
 
-Sans `FIRMS_MAP_KEY`, le serveur sert désormais les CSV publics NASA FIRMS des sept derniers jours pour MODIS, VIIRS NOAA‑20 et NOAA‑21 au Canada, puis les filtre sur la zone et la fenêtre demandées. Les appels Area, l’API de disponibilité et les fenêtres plus anciennes gardent l’état « clé requise ». Les CSV publics sont NRT : ils ne sont ni une archive historique harmonisée ni un dénominateur de couverture. Des requêtes réelles ont renvoyé des observations pour les trois produits dans la zone de démonstration.
+Sans `FIRMS_MAP_KEY`, le serveur sert désormais les CSV publics NASA FIRMS des sept derniers jours pour MODIS, VIIRS NOAA‑20 et NOAA‑21 au Canada, puis les filtre sur la zone et la fenêtre demandées. Sans clé, une fenêtre plus ancienne peut être servie depuis un import local FIRMS accepté après contrôle des manifestes, rapports QA et empreintes CSV/JSONL; chaque réponse signale sa provenance et la couverture inconnue. Sans import correspondant, l’application explique que la clé est requise. Les CSV publics sont NRT : ils ne sont ni une archive historique harmonisée ni un dénominateur de couverture. Des requêtes réelles ont renvoyé des observations pour les trois produits dans la zone de démonstration.
 
 L’application est un outil de situation et d’analyse. Tant qu’un flux n’a pas été branché et contrôlé, la vue doit annoncer clairement son état au lieu d’afficher les valeurs fictives des maquettes comme si elles étaient réelles.
 

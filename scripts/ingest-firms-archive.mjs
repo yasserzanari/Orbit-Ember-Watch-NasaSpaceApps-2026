@@ -14,15 +14,11 @@ const supportedProducts = new Set([
   'VIIRS_NOAA21_NRT', 'VIIRS_NOAA21_SP',
   'VIIRS_SNPP_NRT', 'VIIRS_SNPP_SP',
 ])
-const satellitesByProduct = {
-  MODIS_NRT: new Set(['A', 'T']),
-  MODIS_SP: new Set(['A', 'T']),
-  VIIRS_NOAA20_NRT: new Set(['N20']),
-  VIIRS_NOAA20_SP: new Set(['N20']),
-  VIIRS_NOAA21_NRT: new Set(['N21']),
-  VIIRS_NOAA21_SP: new Set(['N21']),
-  VIIRS_SNPP_NRT: new Set(['NPP']),
-  VIIRS_SNPP_SP: new Set(['NPP']),
+const satelliteAliases = {
+  MODIS: { A: 'A', AQUA: 'A', T: 'T', TERRA: 'T' },
+  VIIRS_NOAA20: { N20: 'N20', '1': 'N20', J1: 'N20', NOAA20: 'N20' },
+  VIIRS_NOAA21: { N21: 'N21', '2': 'N21', J2: 'N21', NOAA21: 'N21' },
+  VIIRS_SNPP: { NPP: 'NPP', SNPP: 'NPP', SUOMINPP: 'NPP', N: 'NPP' },
 }
 const requiredColumns = ['latitude', 'longitude', 'acq_date', 'acq_time', 'satellite', 'frp', 'version']
 const defaultMaxRows = 1_000_000
@@ -129,6 +125,12 @@ function csvRowObject(headers, values) {
   return Object.fromEntries(headers.map((header, index) => [header, (values[index] ?? '').trim()]))
 }
 
+function normalizeSatellite(product, value) {
+  const platform = product.startsWith('MODIS_') ? 'MODIS' : product.startsWith('VIIRS_NOAA20_') ? 'VIIRS_NOAA20' : product.startsWith('VIIRS_NOAA21_') ? 'VIIRS_NOAA21' : 'VIIRS_SNPP'
+  const normalized = value.trim().toUpperCase().replace(/[\s-]+/g, '')
+  return satelliteAliases[platform][normalized] ?? null
+}
+
 function validateObservation(row, product) {
   if (!row.latitude) return { reason: 'invalid_latitude' }
   if (!row.longitude) return { reason: 'invalid_longitude' }
@@ -147,15 +149,20 @@ function validateObservation(row, product) {
   if (hour > 23 || minute > 59) return { reason: 'invalid_acquisition_time' }
   if (!Number.isFinite(frpMw) || frpMw < 0) return { reason: 'invalid_frp' }
   if (!row.satellite) return { reason: 'missing_satellite' }
+  const satellite = normalizeSatellite(product, row.satellite)
+  if (!satellite) return { reason: 'product_satellite_mismatch' }
   const expectedInstrument = product.startsWith('MODIS_') ? 'MODIS' : 'VIIRS'
   const instrument = row.instrument?.trim().toUpperCase() || expectedInstrument
   if (instrument !== expectedInstrument) return { reason: 'product_instrument_mismatch' }
-  if (!satellitesByProduct[product].has(row.satellite.trim().toUpperCase())) return { reason: 'product_satellite_mismatch' }
+  if (row.version?.trim()) {
+    const isRealtimeProcessing = /(?:NRT|RT|URT)$/i.test(row.version.trim())
+    if (isRealtimeProcessing !== product.endsWith('_NRT')) return { reason: 'product_processing_branch_mismatch' }
+  }
   return {
     observation: {
       latitude, longitude,
       acquiredAtUtc: `${row.acq_date}T${hhmm.slice(0, 2)}:${hhmm.slice(2, 4)}:00Z`,
-      satellite: row.satellite,
+      satellite,
       instrument,
       instrumentProvenance: row.instrument?.trim() ? 'source-column' : 'inferred-from-product-id',
       productVersion: row.version || null,
@@ -203,8 +210,9 @@ async function run() {
     let parsedSourceUrl
     try { parsedSourceUrl = new URL(sourceUrlArgument) } catch { throw new Error('--source-url must be a valid HTTPS NASA FIRMS URL.') }
     if (parsedSourceUrl.protocol !== 'https:' || parsedSourceUrl.hostname !== 'firms.modaps.eosdis.nasa.gov'
-      || parsedSourceUrl.username || parsedSourceUrl.password || parsedSourceUrl.search || parsedSourceUrl.hash) {
-      throw new Error('--source-url must use HTTPS on firms.modaps.eosdis.nasa.gov without credentials, query or fragment.')
+      || parsedSourceUrl.username || parsedSourceUrl.password || parsedSourceUrl.search || parsedSourceUrl.hash
+      || /(?:^|\/)api(?:\/|$)/i.test(parsedSourceUrl.pathname)) {
+      throw new Error('--source-url must be a non-API HTTPS URL on firms.modaps.eosdis.nasa.gov without credentials, query or fragment.')
     }
     sourceUrl = parsedSourceUrl.href
   }

@@ -15,6 +15,18 @@ const supportedProducts = new Set([
   'VIIRS_SNPP_NRT', 'VIIRS_SNPP_SP',
 ])
 const productsByPrefix = { MODIS: 'MODIS', VIIRS: 'VIIRS' }
+const satellitesByProduct = {
+  MODIS_NRT: new Set(['A', 'T']), MODIS_SP: new Set(['A', 'T']),
+  VIIRS_NOAA20_NRT: new Set(['N20']), VIIRS_NOAA20_SP: new Set(['N20']),
+  VIIRS_NOAA21_NRT: new Set(['N21']), VIIRS_NOAA21_SP: new Set(['N21']),
+  VIIRS_SNPP_NRT: new Set(['NPP']), VIIRS_SNPP_SP: new Set(['NPP']),
+}
+const satelliteAliases = {
+  MODIS: { A: 'A', AQUA: 'A', T: 'T', TERRA: 'T' },
+  VIIRS_NOAA20: { N20: 'N20', '1': 'N20', J1: 'N20', NOAA20: 'N20' },
+  VIIRS_NOAA21: { N21: 'N21', '2': 'N21', J2: 'N21', NOAA21: 'N21' },
+  VIIRS_SNPP: { NPP: 'NPP', SNPP: 'NPP', SUOMINPP: 'NPP', N: 'NPP' },
+}
 
 function usage() {
   return `Usage:
@@ -83,6 +95,13 @@ function confidenceValue(value) {
 function dayNightValue(value) {
   if (value === null || value === undefined || String(value).trim() === '') return 'not-provided'
   return String(value).trim()
+}
+
+function normalizeSatellite(product, value) {
+  const platform = product.startsWith('MODIS_') ? 'MODIS' : product.startsWith('VIIRS_NOAA20_') ? 'VIIRS_NOAA20' : product.startsWith('VIIRS_NOAA21_') ? 'VIIRS_NOAA21' : 'VIIRS_SNPP'
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toUpperCase().replace(/[\s-]+/g, '')
+  return satelliteAliases[platform][normalized] ?? null
 }
 
 function addCount(target, key) {
@@ -228,7 +247,9 @@ function validateRecord(record, importEntry, lineNumber) {
   if (!record || typeof record !== 'object' || !Number.isFinite(record.latitude) || record.latitude < -90 || record.latitude > 90
     || !Number.isFinite(record.longitude) || record.longitude < -180 || record.longitude > 180
     || !Number.isFinite(record.frpMw) || record.frpMw < 0 || typeof record.satellite !== 'string' || !record.satellite
-    || typeof record.instrument !== 'string' || !record.instrument || !record.acquiredAtUtc || !Number.isFinite(Date.parse(record.acquiredAtUtc))) {
+    || typeof record.instrument !== 'string' || !record.instrument
+    || (record.productVersion !== null && record.productVersion !== undefined && typeof record.productVersion !== 'string')
+    || !record.acquiredAtUtc || !Number.isFinite(Date.parse(record.acquiredAtUtc))) {
     throw new Error(`Invalid normalized observation at ${importEntry.importId}:${lineNumber}.`)
   }
   const day = record.acquiredAtUtc.slice(0, 10)
@@ -237,6 +258,23 @@ function validateRecord(record, importEntry, lineNumber) {
   }
   const expectedInstrument = productsByPrefix[importEntry.product.startsWith('MODIS_') ? 'MODIS' : 'VIIRS']
   if (record.instrument !== expectedInstrument) throw new Error(`Instrument/product identity mismatch at ${importEntry.importId}:${lineNumber}.`)
+  if (!satellitesByProduct[importEntry.product].has(record.satellite.trim().toUpperCase())) {
+    throw new Error(`Satellite/product identity mismatch at ${importEntry.importId}:${lineNumber}.`)
+  }
+  if (!record.native || typeof record.native !== 'object' || Array.isArray(record.native)) {
+    throw new Error(`Native source attributes are missing at ${importEntry.importId}:${lineNumber}.`)
+  }
+  if ((record.native.satellite && normalizeSatellite(importEntry.product, record.native.satellite) !== record.satellite.trim().toUpperCase())
+    || (record.native.instrument && (typeof record.native.instrument !== 'string' || record.native.instrument.trim().toUpperCase() !== expectedInstrument))
+    || (record.native.version && (typeof record.native.version !== 'string' || record.native.version !== record.productVersion))) {
+    throw new Error(`Normalized/source attribute mismatch at ${importEntry.importId}:${lineNumber}.`)
+  }
+  if (record.productVersion) {
+    const isRealtimeProcessing = /(?:URT|RT|NRT)$/i.test(String(record.productVersion).trim())
+    if (isRealtimeProcessing !== importEntry.product.endsWith('_NRT')) {
+      throw new Error(`Processing branch/product identity mismatch at ${importEntry.importId}:${lineNumber}.`)
+    }
+  }
   return record
 }
 
@@ -262,8 +300,12 @@ async function aggregateProduct(product, imports) {
         throw new Error(`Cannot aggregate invalid normalized record: ${error.message}`)
       }
       if (observation.native && typeof observation.native === 'object') {
-        const nativeCanonical = Object.fromEntries(Object.entries(observation.native).sort(([a], [b]) => a.localeCompare(b)))
-        const dedupeKey = sha256(JSON.stringify([product, nativeCanonical]))
+        const nativeCanonical = { ...observation.native }
+        if (typeof nativeCanonical.satellite === 'string') {
+          nativeCanonical.satellite = normalizeSatellite(product, nativeCanonical.satellite) ?? nativeCanonical.satellite.trim().toUpperCase()
+        }
+        const sortedNativeCanonical = Object.fromEntries(Object.entries(nativeCanonical).sort(([a], [b]) => a.localeCompare(b)))
+        const dedupeKey = sha256(JSON.stringify([product, sortedNativeCanonical]))
         if (seenExactRows.has(dedupeKey)) { duplicateRowsAcrossImports += 1; continue }
         seenExactRows.add(dedupeKey)
       }
