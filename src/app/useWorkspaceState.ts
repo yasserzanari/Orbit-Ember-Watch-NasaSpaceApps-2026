@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 
 export type WorkspaceLocation = { name: string; lat: number; lon: number }
 export type WorkspaceView = 'Dashboard' | 'Live Map' | 'Calendar' | 'Compare' | 'Terrain' | 'Data & Sources' | 'Scenario' | 'Field Situation'
+export type FirmsProduct = 'VIIRS_NOAA20_NRT' | 'VIIRS_NOAA21_NRT' | 'MODIS_NRT' | 'VIIRS_NOAA20_SP' | 'VIIRS_NOAA21_SP' | 'MODIS_SP'
+export type FirmsDayRange = 1 | 2 | 3 | 5
 
 export const workspaceLocations: WorkspaceLocation[] = [
   { name: 'Calgary, Alberta', lat: 51.0447, lon: -114.0719 },
@@ -11,11 +13,15 @@ export const workspaceLocations: WorkspaceLocation[] = [
 ]
 
 const views: WorkspaceView[] = ['Dashboard', 'Live Map', 'Calendar', 'Compare', 'Terrain', 'Data & Sources', 'Scenario', 'Field Situation']
+const firmsProducts: FirmsProduct[] = ['VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'VIIRS_NOAA20_SP', 'VIIRS_NOAA21_SP', 'MODIS_SP']
+const firmsDayRanges: FirmsDayRange[] = [1, 2, 3, 5]
 
 export type WorkspaceState = {
   view: WorkspaceView
   location: WorkspaceLocation
   selectedTime: string | null
+  firmsProduct: FirmsProduct
+  firmsDays: FirmsDayRange
   windVisible: boolean
   terrainEnabled: boolean
 }
@@ -33,6 +39,8 @@ function readWorkspaceState(): WorkspaceState {
   const lon = validCoordinate(params.get('lon'), -180, 180)
   const name = params.get('place')?.trim().slice(0, 80)
   const timestamp = params.get('time')
+  const productParam = params.get('product') as FirmsProduct | null
+  const daysParam = Number(params.get('days')) as FirmsDayRange
   const includesTimezone = timestamp ? /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) : false
   const date = timestamp ? new Date(includesTimezone ? timestamp : `${timestamp}Z`) : null
   const selectedTime = date && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 16) : null
@@ -45,6 +53,8 @@ function readWorkspaceState(): WorkspaceState {
     view: viewParam && views.includes(viewParam) ? viewParam : 'Dashboard',
     location,
     selectedTime,
+    firmsProduct: productParam && firmsProducts.includes(productParam) ? productParam : firmsProducts[0],
+    firmsDays: firmsDayRanges.includes(daysParam) ? daysParam : 1,
     windVisible: params.get('wind') !== '0',
     terrainEnabled: params.get('terrain') !== '0',
   }
@@ -58,6 +68,8 @@ function writeWorkspaceState(state: WorkspaceState) {
   url.searchParams.set('place', state.location.name)
   if (state.selectedTime) url.searchParams.set('time', state.selectedTime)
   else url.searchParams.delete('time')
+  url.searchParams.set('product', state.firmsProduct)
+  url.searchParams.set('days', String(state.firmsDays))
   url.searchParams.set('wind', state.windVisible ? '1' : '0')
   url.searchParams.set('terrain', state.terrainEnabled ? '1' : '0')
   window.history.replaceState(window.history.state, '', url)
@@ -77,6 +89,8 @@ export function useWorkspaceState() {
   const setView = useCallback((view: WorkspaceView) => setState((current) => ({ ...current, view })), [])
   const setLocation = useCallback((location: WorkspaceLocation) => setState((current) => ({ ...current, location, selectedTime: null })), [])
   const setSelectedTime = useCallback((selectedTime: string | null) => setState((current) => ({ ...current, selectedTime })), [])
+  const setFirmsProduct = useCallback((firmsProduct: FirmsProduct) => setState((current) => ({ ...current, firmsProduct })), [])
+  const setFirmsDays = useCallback((firmsDays: FirmsDayRange) => setState((current) => ({ ...current, firmsDays })), [])
   const setWindVisible = useCallback((windVisible: boolean | ((current: boolean) => boolean)) => setState((current) => ({
     ...current,
     windVisible: typeof windVisible === 'function' ? windVisible(current.windVisible) : windVisible,
@@ -88,6 +102,6 @@ export function useWorkspaceState() {
 
   return {
     ...state,
-    setView, setLocation, setSelectedTime, setWindVisible, setTerrainEnabled,
+    setView, setLocation, setSelectedTime, setFirmsProduct, setFirmsDays, setWindVisible, setTerrainEnabled,
   }
 }
