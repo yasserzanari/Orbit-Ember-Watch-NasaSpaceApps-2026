@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type WorkspaceLocation = { name: string; lat: number; lon: number }
 export type WorkspaceView = 'Dashboard' | 'Live Map' | 'Calendar' | 'Compare' | 'Terrain' | 'Data & Sources' | 'Scenario' | 'Field Situation'
@@ -71,7 +71,7 @@ function readWorkspaceState(): WorkspaceState {
   }
 }
 
-function writeWorkspaceState(state: WorkspaceState) {
+function writeWorkspaceState(state: WorkspaceState, mode: 'push' | 'replace') {
   const url = new URL(window.location.href)
   url.searchParams.set('view', state.view)
   url.searchParams.set('lat', state.location.lat.toFixed(4))
@@ -87,19 +87,35 @@ function writeWorkspaceState(state: WorkspaceState) {
   url.searchParams.set('days', String(state.firmsDays))
   url.searchParams.set('wind', state.windVisible ? '1' : '0')
   url.searchParams.set('terrain', state.terrainEnabled ? '1' : '0')
-  window.history.replaceState(window.history.state, '', url)
+  const existing = window.history.state
+  const historyState = existing && typeof existing === 'object' && !Array.isArray(existing)
+    ? existing as Record<string, unknown>
+    : {}
+  const nextHistoryState = { ...historyState, orbitEmberWatch: true }
+  if (mode === 'push') window.history.pushState(nextHistoryState, '', url)
+  else window.history.replaceState(nextHistoryState, '', url)
 }
 
 export function useWorkspaceState() {
   const [state, setState] = useState<WorkspaceState>(readWorkspaceState)
+  const previousView = useRef(state.view)
+  const restoringHistory = useRef(false)
 
   useEffect(() => {
-    const restore = () => setState(readWorkspaceState())
+    const restore = () => {
+      restoringHistory.current = true
+      setState(readWorkspaceState())
+    }
     window.addEventListener('popstate', restore)
     return () => window.removeEventListener('popstate', restore)
   }, [])
 
-  useEffect(() => writeWorkspaceState(state), [state])
+  useEffect(() => {
+    const mode = restoringHistory.current ? 'replace' : previousView.current !== state.view ? 'push' : 'replace'
+    writeWorkspaceState(state, mode)
+    previousView.current = state.view
+    restoringHistory.current = false
+  }, [state])
 
   const setView = useCallback((view: WorkspaceView) => setState((current) => ({ ...current, view })), [])
   const setLocation = useCallback((location: WorkspaceLocation) => setState((current) => ({ ...current, location, selectedTime: null, selectedDate: null })), [])

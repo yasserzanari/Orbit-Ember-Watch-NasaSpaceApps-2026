@@ -9,6 +9,7 @@ The application communicates satellite thermal detections, weather observations/
 - Canonical shell: shared header, persistent left navigation, shared map canvas, docked inspector, optional timeline.
 - Routes: Dashboard, Live Map, Calendar, Compare, Terrain, Data & Sources, Scenario, Mobile Situation.
 - AOI, date window, selected platforms, processing branch and selected time bin are app-level state; route changes preserve them. Shareable selections are serializable in URL parameters.
+- Moving to another route adds a browser-history entry. Filter changes replace the current entry so Back/Forward traverses workspace routes without adding one entry per slider or layer change. `popstate` restores the route and serialized filters from that entry.
 - A selected observation or time bin stays linked across map, chart, calendar and inspector.
 - Mobile navigation uses a dismissible drawer; detail panels become accessible bottom sheets.
 - Data & Sources may query NASA FIRMS `data_availability` through the server proxy; show returned product date ranges with a retrieval timestamp, explain that dates do not prove coverage for an AOI, and preserve unknown/key-missing/error states.
