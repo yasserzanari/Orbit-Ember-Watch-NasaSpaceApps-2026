@@ -1,5 +1,7 @@
 # Démo hackathon — Orbit Ember Watch
 
+Le [brouillon de soumission et le pitch de 90 secondes](SUBMISSION-DRAFT.md) sont prêts à adapter au nom de l’équipe, au lien de démo et aux consignes de votre événement local.
+
 ## Préparer la démo
 
 1. Lancer `npm run dev` et ouvrir l’application après le redémarrage du serveur.
@@ -25,7 +27,7 @@ Dans **Calendar**, charger **Alberta west · May 4–20, 2023**. Cette fenêtre 
 
 Présenter cette carte comme **contexte régional historique CWFIS** : son emprise contient des détections de la région et ne relie pas chaque détection à EWF031/Pembina. Elle n’est ni une archive NASA FIRMS brute ni une vérité terrain de périmètre. Les jours sans ligne ont une couverture inconnue. Les métadonnées CWFIS décrivent un produit hotspot composite comportant des sources NASA, USFS et plusieurs instruments; la provenance de chaque ligne reste affichée dans le panneau. [CWFIS Fire M3 — métadonnées](https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/archive/fireM3_hotspots_metadata_NAP_ISO_19115_2003.pdf), [attributs du jeu de données](https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/fireM3_hotspots_metadata_attributes_EN_FR.pdf).
 
-Les métadonnées indiquent aussi qu’un **End-User Agreement est requis** et imposent une attribution CWFIS. Le panneau demande à l’équipe de confirmer que l’accord a été examiné et couvre cet usage avant d’interroger le flux. L’ancienne URL retourne 404; le nouvel hôte sert l’application CWFIS, mais je n’ai pas pu confirmer que sa route affiche le texte de l’accord. Vérifier l’accord courant auprès du CWFIS avant une présentation publique ou une redistribution. L’attribution complète est affichée sous les séries.
+Les métadonnées indiquent aussi qu’un **End-User Agreement est requis** et imposent une attribution CWFIS. Le panneau demande à l’équipe de confirmer que l’accord a été examiné et couvre cet usage avant d’interroger le flux; le serveur bloque également l’API tant que `CWFIS_EULA_CONFIRMED=true` n’est pas défini dans `.env`. N’activer ce paramètre qu’après confirmation de l’accord par l’équipe. L’ancienne URL retourne 404; le nouvel hôte sert l’application CWFIS, mais je n’ai pas pu confirmer que sa route affiche le texte de l’accord. Vérifier l’accord courant auprès du CWFIS avant une présentation publique ou une redistribution. L’attribution complète est affichée sous les séries.
 
 L’endpoint de ce panneau est distinct de `/api/firms` :
 

@@ -558,6 +558,12 @@ async function getFirmsArchiveCatalog(response) {
 }
 
 async function getCwfisHotspots(requestUrl, response) {
+  if (process.env.CWFIS_EULA_CONFIRMED !== 'true') {
+    return json(response, 403, {
+      code: 'cwfis_terms_not_confirmed',
+      message: 'CWFIS history is disabled until the team reviews its End-User Agreement and confirms this use is covered. Ask the server administrator to enable the source after that review.',
+    })
+  }
   const bbox = validateBbox(requestUrl.searchParams.get('bbox'))
   const startDate = validateUtcDate(requestUrl.searchParams.get('start'))
   const endDate = validateUtcDate(requestUrl.searchParams.get('end'))
