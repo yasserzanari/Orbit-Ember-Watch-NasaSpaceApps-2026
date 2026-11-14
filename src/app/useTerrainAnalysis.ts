@@ -8,6 +8,7 @@ const transectSamples = 25
 const neighborSpacingPixels = 2
 
 export type TerrainProfilePoint = { distanceKm: number; elevationM: number }
+export type TerrainEndpoints = [[number, number], [number, number]]
 export type TerrainAnalysis = {
   state: 'idle' | 'loading' | 'ready' | 'error'
   elevationM: number | null
@@ -89,7 +90,7 @@ function offsetPoint(latitude: number, longitude: number, eastMeters: number, no
   }
 }
 
-function classifyTerrain(latitude: number, grid: number[], profileValues: number[]): TerrainAnalysis {
+function classifyTerrain(latitude: number, grid: number[], profileValues: number[], profileLengthMeters: number): TerrainAnalysis {
   const pixelSizeM = earthRadiusMeters * Math.cos(latitude * Math.PI / 180) * 2 * Math.PI / (tileSize * (2 ** zoom))
   const spacingM = pixelSizeM * neighborSpacingPixels
   const [nw,n,ne,w,center,e,sw,s,se] = grid
@@ -98,7 +99,7 @@ function classifyTerrain(latitude: number, grid: number[], profileValues: number
   const slopeDegrees = Math.atan(Math.hypot(dzEast, dzSouth)) * 180 / Math.PI
   const aspectDegrees = slopeDegrees < 2 ? null : (Math.atan2(-dzEast, dzSouth) * 180 / Math.PI + 360) % 360
   const profile = profileValues.map((elevationM, index) => ({
-    distanceKm: index * (transectLengthMeters / (transectSamples - 1)) / 1_000,
+    distanceKm: index * (profileLengthMeters / (transectSamples - 1)) / 1_000,
     elevationM,
   }))
   return {
@@ -108,22 +109,47 @@ function classifyTerrain(latitude: number, grid: number[], profileValues: number
   }
 }
 
-async function loadAnalysis(latitude: number, longitude: number): Promise<TerrainAnalysis> {
+function sampleGreatCircle(start: [number, number], end: [number, number], count: number) {
+  const radians = Math.PI / 180
+  const degrees = 180 / Math.PI
+  const [startLongitude, startLatitude] = start
+  const [endLongitude, endLatitude] = end
+  const phi1 = startLatitude * radians
+  const lambda1 = startLongitude * radians
+  const phi2 = endLatitude * radians
+  const lambda2 = endLongitude * radians
+  const deltaPhi = phi2 - phi1
+  const deltaLambda = lambda2 - lambda1
+  const haversine = Math.sin(deltaPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2
+  const angularDistance = 2 * Math.asin(Math.min(1, Math.sqrt(haversine)))
+  const denominator = Math.sin(angularDistance)
+  const points = Array.from({ length: count }, (_, index) => {
+    const fraction = index / Math.max(1, count - 1)
+    if (angularDistance < 1e-9) return { latitude: startLatitude, longitude: startLongitude }
+    const a = Math.sin((1 - fraction) * angularDistance) / denominator
+    const b = Math.sin(fraction * angularDistance) / denominator
+    const x = a * Math.cos(phi1) * Math.cos(lambda1) + b * Math.cos(phi2) * Math.cos(lambda2)
+    const y = a * Math.cos(phi1) * Math.sin(lambda1) + b * Math.cos(phi2) * Math.sin(lambda2)
+    const z = a * Math.sin(phi1) + b * Math.sin(phi2)
+    return { latitude: Math.atan2(z, Math.hypot(x, y)) * degrees, longitude: Math.atan2(y, x) * degrees }
+  })
+  return { points, lengthMeters: earthRadiusMeters * angularDistance }
+}
+
+async function loadAnalysis(latitude: number, longitude: number, endpoints: TerrainEndpoints): Promise<TerrainAnalysis> {
   const sampleDistanceM = earthRadiusMeters * Math.cos(latitude * Math.PI / 180) * 2 * Math.PI / (tileSize * (2 ** zoom)) * neighborSpacingPixels
   const neighborhood = [
     [-1,-1], [0,-1], [1,-1], [-1,0], [0,0], [1,0], [-1,1], [0,1], [1,1],
   ].map(([column,row]) => offsetPoint(latitude, longitude, column * sampleDistanceM, -row * sampleDistanceM))
-  const profilePoints = Array.from({ length: transectSamples }, (_, index) => {
-    const east = (index / (transectSamples - 1) - 0.5) * transectLengthMeters
-    return offsetPoint(latitude, longitude, east, 0)
-  })
+  const profile = sampleGreatCircle(endpoints[0], endpoints[1], transectSamples)
+  if (profile.lengthMeters > 600_000) throw new Error('The A–B terrain profile is limited to 600 km. Choose two points closer together.')
   const [neighborhoodElevations, profileElevations] = await Promise.all([
-    sampleElevations(neighborhood), sampleElevations(profilePoints),
+    sampleElevations(neighborhood), sampleElevations(profile.points),
   ])
-  return classifyTerrain(latitude, neighborhoodElevations, profileElevations)
+  return classifyTerrain(latitude, neighborhoodElevations, profileElevations, profile.lengthMeters)
 }
 
-export function terrainTransectCoordinates(latitude: number, longitude: number): [number, number][] {
+export function terrainTransectCoordinates(latitude: number, longitude: number): TerrainEndpoints {
   const west = offsetPoint(latitude, longitude, -transectLengthMeters / 2, 0)
   const east = offsetPoint(latitude, longitude, transectLengthMeters / 2, 0)
   return [[west.longitude, west.latitude], [east.longitude, east.latitude]]
@@ -134,19 +160,19 @@ export function terrainAspectLabel(degrees: number | null) {
   return ['N','NE','E','SE','S','SW','W','NW'][Math.round(degrees / 45) % 8]
 }
 
-export function useTerrainAnalysis(latitude: number, longitude: number, enabled: boolean, retryKey = 0): TerrainAnalysis {
+export function useTerrainAnalysis(latitude: number, longitude: number, enabled: boolean, retryKey = 0, endpoints?: TerrainEndpoints): TerrainAnalysis {
   const [analysis, setAnalysis] = useState<TerrainAnalysis>(initial)
   useEffect(() => {
     if (!enabled) { setAnalysis(initial); return }
     let cancelled = false
     setAnalysis({ ...initial, state: 'loading' })
-    loadAnalysis(latitude, longitude)
+    loadAnalysis(latitude, longitude, endpoints ?? terrainTransectCoordinates(latitude, longitude))
       .then((result) => { if (!cancelled) setAnalysis(result) })
       .catch((error: unknown) => {
         if (cancelled) return
         setAnalysis({ ...initial, state: 'error', error: error instanceof Error ? error.message : 'Could not load terrain elevation tiles.' })
       })
     return () => { cancelled = true }
-  }, [latitude, longitude, enabled, retryKey])
+  }, [latitude, longitude, enabled, retryKey, endpoints])
   return analysis
 }

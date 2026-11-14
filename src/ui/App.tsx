@@ -6,7 +6,7 @@ import { useWorkspaceState, workspaceLocations } from '../app/useWorkspaceState'
 import type { FirmsProduct, WorkspaceView } from '../app/useWorkspaceState'
 import { FieldReports } from './FieldReports'
 import { terrainAspectLabel, terrainTransectCoordinates, useTerrainAnalysis } from '../app/useTerrainAnalysis'
-import type { TerrainAnalysis } from '../app/useTerrainAnalysis'
+import type { TerrainAnalysis, TerrainEndpoints } from '../app/useTerrainAnalysis'
 import {
   Activity, AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleHelp,
   ClipboardList, Clock3, CloudRain, Compass, Database, Flame, Layers3, LocateFixed, Map,
@@ -488,6 +488,20 @@ function createWindArrow(): ImageData {
   return context.getImageData(0, 0, canvas.width, canvas.height)
 }
 
+function createTerrainEndpointMarker(letter: 'A' | 'B'): ImageData {
+  const canvas = document.createElement('canvas')
+  canvas.width = 48; canvas.height = 48
+  const context = canvas.getContext('2d')
+  if (!context) return new ImageData(48, 48)
+  const accent = letter === 'A' ? '#58f1e8' : '#f4b12f'
+  context.shadowColor = accent; context.shadowBlur = 12
+  context.fillStyle = '#0a202a'; context.strokeStyle = accent; context.lineWidth = 3
+  context.beginPath(); context.arc(24, 24, 17, 0, Math.PI * 2); context.fill(); context.stroke()
+  context.shadowBlur = 0; context.fillStyle = '#f3ffff'; context.font = '700 19px sans-serif'
+  context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillText(letter, 24, 24)
+  return context.getImageData(0, 0, canvas.width, canvas.height)
+}
+
 function windSpeedColor(speedKmh: number): [number, number, number] {
   const stops: Array<[number, number, number, number]> = [
     [0, 76, 137, 151], [10, 42, 145, 170], [20, 44, 173, 195], [35, 174, 205, 159],
@@ -580,7 +594,7 @@ function whenMapStyleReady(instance: MapLibreMap, callback: () => void) {
   return () => instance.off('style.load', onStyleLoad)
 }
 
-function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windState, onRetryWind, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, onCameraChange, syncGroup, terrainTransect }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windState: WindFieldState['state']; onRetryWind: () => void; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; onCameraChange: (viewport: WindViewport) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][] }) {
+function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windState, onRetryWind, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, onCameraChange, syncGroup, terrainTransect, terrainTransectSelecting = false, onTerrainTransectPoint }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windState: WindFieldState['state']; onRetryWind: () => void; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; onCameraChange: (viewport: WindViewport) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][]; terrainTransectSelecting?: boolean; onTerrainTransectPoint?: (point: [number, number]) => void }) {
   const element = useRef<HTMLDivElement>(null)
   const windFlowCanvas = useRef<HTMLCanvasElement>(null)
   const map = useRef<MapLibreMap | null>(null)
@@ -589,12 +603,15 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
   const selectPoint = useRef(onSelectPoint)
   const selectObservation = useRef(onSelectObservation)
   const reportCamera = useRef(onCameraChange)
+  const selectTerrainTransectPoint = useRef(onTerrainTransectPoint)
+  const selectingTerrainTransect = useRef(terrainTransectSelecting)
   const observationsRef = useRef(observations)
   const windNodesRef = useRef(windNodes)
   const windTimeRef = useRef(windTime)
   useEffect(() => { selectPoint.current = onSelectPoint }, [onSelectPoint])
   useEffect(() => { selectObservation.current = onSelectObservation }, [onSelectObservation])
   useEffect(() => { reportCamera.current = onCameraChange }, [onCameraChange])
+  useEffect(() => { selectTerrainTransectPoint.current = onTerrainTransectPoint; selectingTerrainTransect.current = terrainTransectSelecting }, [onTerrainTransectPoint, terrainTransectSelecting])
   useEffect(() => { observationsRef.current = observations }, [observations])
   useEffect(() => { windNodesRef.current = windNodes; windTimeRef.current = windTime }, [windNodes, windTime])
   useEffect(() => {
@@ -662,9 +679,19 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       map.current?.addSource('terrain-transect', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.current?.addLayer({ id: 'terrain-transect-line', type: 'line', source: 'terrain-transect', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#34e5e4', 'line-width': 2.5, 'line-dasharray': [2, 1.2], 'line-opacity': 0.95 } })
       map.current?.addLayer({ id: 'terrain-transect-points', type: 'circle', source: 'terrain-transect', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 8, 'circle-color': '#0b2029', 'circle-stroke-color': '#4ef0eb', 'circle-stroke-width': 2 } })
+      if (!map.current?.hasImage('terrain-endpoint-a')) map.current?.addImage('terrain-endpoint-a', createTerrainEndpointMarker('A'), { pixelRatio: 2 })
+      if (!map.current?.hasImage('terrain-endpoint-b')) map.current?.addImage('terrain-endpoint-b', createTerrainEndpointMarker('B'), { pixelRatio: 2 })
+      if (!map.current?.getLayer('terrain-transect-labels')) map.current?.addLayer({
+        id: 'terrain-transect-labels', type: 'symbol', source: 'terrain-transect', filter: ['==', ['geometry-type'], 'Point'],
+        layout: { 'icon-image': ['match', ['get', 'endpoint'], 'A', 'terrain-endpoint-a', 'terrain-endpoint-b'], 'icon-size': 0.72, 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-anchor': 'center' },
+      })
     })
     map.current.getCanvas().style.cursor = 'crosshair'
     map.current.on('click', (event) => {
+      if (selectingTerrainTransect.current) {
+        selectTerrainTransectPoint.current?.([event.lngLat.lng, event.lngLat.lat])
+        return
+      }
       const clusterFeature = map.current?.queryRenderedFeatures(event.point, { layers: ['firms-clusters'] })[0]
       const clusterId = Number(clusterFeature?.properties?.cluster_id)
       if (Number.isInteger(clusterId)) {
@@ -1011,11 +1038,13 @@ function TerrainCrossSection({ analysis }: { analysis: TerrainAnalysis }) {
   const values = analysis.profile.map((point) => point.elevationM)
   const minimum = analysis.minElevationM ?? 0
   const range = Math.max(1, (analysis.maxElevationM ?? minimum) - minimum)
+  const distanceKm = analysis.profile.at(-1)?.distanceKm ?? 80
+  const distanceLabel = distanceKm < 10 ? distanceKm.toFixed(1) : Math.round(distanceKm).toString()
   const path = analysis.profile.map((point, index) => `${index / Math.max(analysis.profile.length - 1, 1) * 100},${92 - ((point.elevationM - minimum) / range) * 78}`).join(' ')
   const fillPath = analysis.profile.length ? `0,100 ${path} 100,100` : ''
   return <section className="terrain-profile-strip" aria-label="Terrain cross-section">
-    <header><div><b><Activity size={14} /> Terrain cross-section · A—B</b><small>{analysis.state === 'ready' ? `80 km east–west · ${analysis.profile.length} samples · Terrarium z12` : analysis.state === 'loading' ? 'Loading elevation tiles…' : analysis.state === 'error' ? 'Terrain profile unavailable' : 'Select Terrain to sample the elevation grid'}</small></div>{analysis.state === 'ready' && <span>{Math.round(minimum)}–{Math.round(analysis.maxElevationM ?? minimum)} m range</span>}</header>
-    {analysis.state === 'ready' && values.length ? <div className="terrain-profile-chart"><span className="terrain-profile-max">{Math.round(analysis.maxElevationM ?? 0)} m</span><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Terrain profile from ${Math.round(values[0])} metres to ${Math.round(values.at(-1) ?? values[0])} metres over 80 kilometres`}><path d="M 0 25 H 100 M 0 50 H 100 M 0 75 H 100" className="terrain-profile-grid" /><polygon points={fillPath} className="terrain-profile-fill" /><polyline points={path} className="terrain-profile-line" vectorEffect="non-scaling-stroke" /></svg><span className="terrain-profile-min">{Math.round(analysis.minElevationM ?? 0)} m</span><div className="terrain-profile-distance"><span>A · 0 km</span><span>B · 80 km</span></div></div> : <div className="terrain-profile-state">{analysis.state === 'error' ? analysis.error ?? 'The terrain tiles could not be read.' : 'A data-driven elevation profile appears here after the DEM samples load.'}</div>}
+    <header><div><b><Activity size={14} /> Terrain cross-section · A—B</b><small>{analysis.state === 'ready' ? `${distanceLabel} km · ${analysis.profile.length} DEM samples · Terrarium z12` : analysis.state === 'loading' ? 'Sampling the selected A—B transect…' : analysis.state === 'error' ? 'Terrain profile unavailable' : 'Select Terrain to sample the elevation grid'}</small></div>{analysis.state === 'ready' && <span>{Math.round(minimum)}–{Math.round(analysis.maxElevationM ?? minimum)} m range</span>}</header>
+    {analysis.state === 'ready' && values.length ? <div className="terrain-profile-chart"><span className="terrain-profile-max">{Math.round(analysis.maxElevationM ?? 0)} m</span><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Terrain profile from ${Math.round(values[0])} metres to ${Math.round(values.at(-1) ?? values[0])} metres over ${distanceLabel} kilometres`}><path d="M 0 25 H 100 M 0 50 H 100 M 0 75 H 100" className="terrain-profile-grid" /><polygon points={fillPath} className="terrain-profile-fill" /><polyline points={path} className="terrain-profile-line" vectorEffect="non-scaling-stroke" /></svg><span className="terrain-profile-min">{Math.round(analysis.minElevationM ?? 0)} m</span><div className="terrain-profile-distance"><span>A · 0 km</span><span>B · {distanceLabel} km</span></div></div> : <div className="terrain-profile-state">{analysis.state === 'error' ? analysis.error ?? 'The terrain tiles could not be read.' : 'A data-driven elevation profile appears here after the DEM samples load.'}</div>}
   </section>
 }
 
@@ -1226,6 +1255,9 @@ export function App() {
   const [terrainRefresh, setTerrainRefresh] = useState(0)
   const [elevation, setElevation] = useState<{ value: number; state: 'loading' | 'ready' | 'error' }>({ value: 0, state: 'loading' })
   const [windViewport, setWindViewport] = useState<WindViewport | null>(null)
+  const [customTerrainTransect, setCustomTerrainTransect] = useState<TerrainEndpoints | null>(null)
+  const [terrainTransectPointTarget, setTerrainTransectPointTarget] = useState<'A' | 'B' | null>(null)
+  const [terrainTransectMessage, setTerrainTransectMessage] = useState('')
   const compareMapSync = useRef<MapSyncGroup>({ maps: new Set(), syncing: false })
   const updateWindViewport = useCallback((viewport: WindViewport) => {
     const quantize = (value: number) => Math.round(value * 4) / 4
@@ -1248,8 +1280,28 @@ export function App() {
   const firmsArchiveCatalog = useFirmsArchiveCatalog(active === 'Data & Sources')
   const compareA = useFirms(location.lat, location.lon, compareSourceA, firmsDays, queryEndDate)
   const compareB = useFirms(location.lat, location.lon, compareSourceB, firmsDays, queryEndDate)
-  const terrainAnalysis = useTerrainAnalysis(location.lat, location.lon, active === 'Terrain' || active === 'Scenario', terrainRefresh)
-  const terrainTransect = useMemo(() => terrainTransectCoordinates(location.lat, location.lon), [location.lat, location.lon])
+  const defaultTerrainTransect = useMemo(() => terrainTransectCoordinates(location.lat, location.lon), [location.lat, location.lon])
+  const terrainTransect = customTerrainTransect ?? defaultTerrainTransect
+  const terrainAnalysis = useTerrainAnalysis(location.lat, location.lon, active === 'Terrain' || active === 'Scenario', terrainRefresh, terrainTransect)
+  const selectTerrainTransectPoint = useCallback((point: [number, number]) => {
+    if (!terrainTransectPointTarget) return
+    setTerrainTransectMessage('')
+    setCustomTerrainTransect((current) => {
+      const endpoints: TerrainEndpoints = current
+        ? [[...current[0]], [...current[1]]]
+        : [[...defaultTerrainTransect[0]], [...defaultTerrainTransect[1]]]
+      endpoints[terrainTransectPointTarget === 'A' ? 0 : 1] = point
+      return endpoints
+    })
+    const nextTarget = terrainTransectPointTarget === 'A' ? 'B' : null
+    setTerrainTransectPointTarget(nextTarget)
+    setTerrainTransectMessage(nextTarget ? 'Endpoint A saved. Click the map to place endpoint B.' : 'Both endpoints saved. Sampling the A—B profile.')
+  }, [defaultTerrainTransect, terrainTransectPointTarget])
+  useEffect(() => {
+    setCustomTerrainTransect(null)
+    setTerrainTransectPointTarget(null)
+    setTerrainTransectMessage('')
+  }, [location.lat, location.lon])
   const selectObservation = useCallback((observation: FireObservation | null) => {
     setActiveDetection(observation && firmsSources.some((product) => product.id === observation.source)
       ? { ...observation, source: observation.source as FirmsProduct, restoredFromLink: false }
@@ -1515,7 +1567,7 @@ export function App() {
             <div className="compare-map-b" style={compareMode === 'swipe' ? { clipPath: `inset(0 0 0 ${compareSplit}%)` } : undefined}><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareB.observations} windNodes={windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
             {compareMode === 'swipe' && <><div className="compare-swipe-divider" style={{ left: `${compareSplit}%` }} aria-hidden="true"><span>↔</span></div><input className="compare-swipe-input" type="range" min="15" max="85" value={compareSplit} onChange={(event) => setCompareSplit(Number(event.target.value))} aria-label="Adjust comparison divider" /></>}
             <div className="compare-map-chip modis"><i />{compareSourceA.replaceAll('_', ' ')} · {compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : compareA.state.toUpperCase()}</div><div className="compare-map-chip viirs"><i />{compareSourceB.replaceAll('_', ' ')} · {compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : compareB.state.toUpperCase()}</div>
-          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={active === 'Scenario' ? scenarioWindNodes : windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} />}
+          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={active === 'Scenario' ? scenarioWindNodes : windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} terrainTransectSelecting={active === 'Terrain' && terrainTransectPointTarget !== null} onTerrainTransectPoint={selectTerrainTransectPoint} />}
           {active === 'Live Map' && liveMapDock}
           {active === 'Scenario' && <section className="scenario-environment-panel" aria-label="Environmental inputs for the scenario">
             <header><span><Mountain size={16} /></span><div><b>Environmental inputs</b><small>Context for this map view</small></div><span className={`scenario-context-badge ${weather ? 'available' : ''}`}>{weather ? 'LIVE' : 'NO DATA'}</span></header>
@@ -1548,7 +1600,20 @@ export function App() {
             {firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · {firmsAccessLabel(firms.accessMode)}{firms.accessMode === 'local-validated-archive' ? ` · ${firms.archiveImports.map((item) => item.sourceFile).join(', ') || 'import provenance unavailable'}` : ''}</small>}
           </section>}
           {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false && !firms.publicFeedAvailable ? 'KEY NOT SET' : firms.publicFeedAvailable && !firms.configured ? 'PUBLIC FEED' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried && !calendarDateUnknown ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateUnknown ? selectedDateBeforeFeed ? 'Before public feed window' : selectedDateAfterFeed ? 'After public feed window' : 'Archive coverage unknown' : calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateUnknown ? selectedDateBeforeFeed ? `Public feed starts ${unknownBeforeDate}; this date is outside its window.` : selectedDateAfterFeed ? `Public feed ends ${unknownAfterDate}; this date is outside its window.` : 'Archive coverage is unknown for this date.' : calendarDateQueried ? 'Not an incident count' : calendarWindowStart ? `${calendarWindowStart} → ${calendarWindowEnd}` : 'No query window loaded'}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load(calendarSelectedDate)}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the request window or beyond the available source rows has unknown status; missing archive rows do not imply zero activity.</small></section>}
-          {active === 'Terrain' && <section className="terrain-map-controls"><header><Mountain size={16} /><div><b>Terrain layers</b><small>Map & local analysis</small></div></header><button className="terrain-map-layer" onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>Elevation relief</span><b>{terrainEnabled ? '3D' : '2D'}</b></button><button className="terrain-map-layer" onClick={() => setTransectVisible((value) => !value)}><Activity size={15} /><span>Cross-section A—B</span><b>{transectVisible ? 'ON' : 'OFF'}</b></button><div className="terrain-map-layer static-layer"><Activity size={15} /><span>Local slope sample</span><b>{terrainAnalysis.state === 'ready' ? `${terrainAnalysis.slopeDegrees?.toFixed(1)}°` : terrainAnalysis.state.toUpperCase()}</b></div><div className="terrain-map-layer unavailable-layer"><Layers3 size={15} /><span>Land cover / fuels</span><b>NO SOURCE</b></div><div className="terrain-map-key"><i /> Cross-section · 80 km east–west</div></section>}
+          {active === 'Terrain' && <section className="terrain-map-controls" aria-label="Terrain layers and profile controls">
+            <header><Mountain size={16} /><div><b>Terrain layers</b><small>Map & local analysis</small></div></header>
+            <button className="terrain-map-layer" onClick={() => setTerrainEnabled((value) => !value)} aria-pressed={terrainEnabled}><Mountain size={15} /><span>Elevation relief</span><b>{terrainEnabled ? '3D' : '2D'}</b></button>
+            <button className="terrain-map-layer" onClick={() => setTransectVisible((value) => !value)} aria-pressed={transectVisible}><Activity size={15} /><span>Cross-section A—B</span><b>{transectVisible ? 'ON' : 'OFF'}</b></button>
+            <div className="terrain-transect-editor">
+              <div><b>Profile endpoints</b><small>Choose two points on the map</small></div>
+              <div className="terrain-transect-actions"><button className={terrainTransectPointTarget === 'A' ? 'selected' : ''} onClick={() => { setTerrainTransectPointTarget('A'); setTerrainTransectMessage('Click the map to place endpoint A.') }} aria-pressed={terrainTransectPointTarget === 'A'}>Set A</button><button className={terrainTransectPointTarget === 'B' ? 'selected' : ''} onClick={() => { setTerrainTransectPointTarget('B'); setTerrainTransectMessage('Click the map to place endpoint B.') }} aria-pressed={terrainTransectPointTarget === 'B'}>Set B</button><button className="reset" onClick={() => { setCustomTerrainTransect(null); setTerrainTransectPointTarget(null); setTerrainTransectMessage('Default 80 km east–west profile restored.') }} aria-label="Reset terrain profile to default" title="Reset to default profile">↺</button></div>
+              {terrainTransectPointTarget && <p className="terrain-transect-prompt" role="status">{terrainTransectMessage || `Click the map to place endpoint ${terrainTransectPointTarget}.`}</p>}
+              {!terrainTransectPointTarget && terrainTransectMessage && <p className="terrain-transect-prompt" role="status">{terrainTransectMessage}</p>}
+            </div>
+            <div className="terrain-map-layer static-layer"><Activity size={15} /><span>Local slope sample</span><b>{terrainAnalysis.state === 'ready' ? `${terrainAnalysis.slopeDegrees?.toFixed(1)}°` : terrainAnalysis.state.toUpperCase()}</b></div>
+            <div className="terrain-map-layer unavailable-layer"><Layers3 size={15} /><span>Land cover / fuels</span><b>NO SOURCE</b></div>
+            <div className="terrain-map-key"><i /> {terrainAnalysis.state === 'ready' ? `A—B · ${Math.round(terrainAnalysis.profile.at(-1)?.distanceKm ?? 0)} km · 25 DEM samples` : 'A—B profile · DEM data'}</div>
+          </section>}
           <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={(active === 'Compare' ? compareObservations.length > 0 : active === 'Live Map' ? filteredLiveObservations.length > 0 : firms.state === 'ready' && visibleObservations.length > 0) ? 'fire-loaded' : ''} /> {active === 'Compare' ? `MODIS ${compareA.state === 'ready' ? compareA.observations.length : '—'} · VIIRS ${compareB.state === 'ready' ? compareB.observations.length : '—'} returned` : active === 'Live Map' ? liveFeedState === 'ready' ? `${visibleObservations.length} visible${selectedLiveDate ? ` · ${selectedLiveDate}` : ''} · clustered above zoom 9` : liveFeedState === 'loading' ? 'Requesting selected FIRMS sensors' : liveFeedState === 'error' ? 'Selected FIRMS sensors unavailable' : 'Load selected FIRMS sensors' : active === 'Calendar' ? calendarDateUnknown ? `Coverage unknown · ${calendarSelectedDate}` : calendarDateQueried ? `${visibleObservations.length} returned on ${calendarSelectedDate}` : firms.state === 'loading' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Requesting ${calendarSelectedDate}` : firms.state === 'error' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Request failed · ${calendarSelectedDate}` : 'Selected date not queried' : firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
         </div>
 

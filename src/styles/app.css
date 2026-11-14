@@ -799,12 +799,14 @@
   width: 324px;
   gap: 12px;
   padding: 16px;
-  border-color: rgba(177, 230, 235, .38);
+  border-color: rgba(190, 235, 239, .42);
   background:
-    radial-gradient(ellipse at 0 0, rgba(46, 204, 207, .17), transparent 54%),
-    linear-gradient(135deg, rgba(223, 249, 251, .075), transparent 38%),
-    linear-gradient(145deg, rgba(15, 34, 46, .9), rgba(5, 16, 25, .86));
-  box-shadow: 0 24px 60px rgba(0, 0, 0, .44), 0 0 30px rgba(37, 210, 216, .09), inset 0 1px 0 rgba(246, 255, 255, .2);
+    radial-gradient(ellipse at 8% 0, rgba(46, 204, 207, .2), transparent 56%),
+    linear-gradient(135deg, rgba(223, 249, 251, .09), transparent 40%),
+    linear-gradient(145deg, rgba(15, 34, 46, .82), rgba(5, 16, 25, .76));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .38), 0 0 34px rgba(37, 210, 216, .11), inset 0 1px 0 rgba(246, 255, 255, .24);
+  -webkit-backdrop-filter: blur(24px) saturate(155%);
+  backdrop-filter: blur(24px) saturate(155%);
 }
 .dashboard-summary-header { grid-template-columns: 38px minmax(0,1fr) auto; gap: 9px; }
 .dashboard-summary-emblem { width: 38px; height: 38px; border-radius: 12px; box-shadow: 0 5px 18px rgba(242, 104, 59, .12), inset 0 1px 0 rgba(255,255,255,.14); }
@@ -812,8 +814,8 @@
 .dashboard-summary-title>span { font-size: 9px; }
 .dashboard-status-pill { min-height: 28px; padding-inline: 9px; font-size: 9px; }
 .dashboard-summary-context { min-height: 34px; font-size: 11px; }
-.dashboard-detection-count { min-height: 88px; padding: 12px; }
-.dashboard-detection-count>span { font-size: 36px; }
+.dashboard-detection-count { min-height: 88px; padding: 12px; border-color: rgba(210, 235, 235, .28); background: linear-gradient(112deg, rgba(244, 177, 47, .12), transparent 66%), linear-gradient(145deg, rgba(31, 62, 75, .78), rgba(7, 22, 31, .62)); box-shadow: inset 0 1px 0 rgba(246,255,255,.11), 0 8px 24px rgba(0,0,0,.12); }
+.dashboard-detection-count>span { color: #ffd17a; font-size: 36px; text-shadow: 0 0 22px rgba(244,177,47,.18); }
 .dashboard-detection-count b { font-size: 12px; }
 .dashboard-detection-count small { font-size: 10px; line-height: 1.45; }
 .dashboard-product-line { min-height: 34px; font-size: 10px; }
@@ -821,7 +823,8 @@
 .dashboard-condition-row span { font-size: 10px; }
 .dashboard-condition-row b { font-size: 15px; }
 .dashboard-key-note { font-size: 10px; line-height: 1.5; }
-.dashboard-load-button { min-height: 44px; font-size: 11px; font-weight: 600; }
+.dashboard-load-button { min-height: 44px; border: 1px solid rgba(86, 229, 223, .38); background: linear-gradient(120deg, rgba(37,210,216,.2), rgba(37,210,216,.1)); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 7px 20px rgba(0,0,0,.14); font-size: 11px; font-weight: 600; }
+.dashboard-load-button:hover:not(:disabled) { border-color: rgba(126, 247, 237, .72); background: linear-gradient(120deg, rgba(37,210,216,.28), rgba(37,210,216,.14)); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 0 22px rgba(37,210,216,.12); }
 .dashboard-freshness { font-size: 9px; }
 .dashboard-status-pill.blocked { box-shadow: 0 0 18px rgba(244, 177, 47, .08), inset 0 1px 0 rgba(255,255,255,.08); }
 .dashboard-status-pill.error { box-shadow: 0 0 18px rgba(239, 76, 76, .1), inset 0 1px 0 rgba(255,255,255,.08); }
@@ -840,7 +843,7 @@
   .dashboard-condition-row b { font-size: 12px; }
 }
 @media (max-width: 760px) {
-  .dashboard-map-summary { width: min(248px, calc(100% - 16px)); padding: 11px; gap: 8px; }
+  .dashboard-map-summary { width: min(248px, calc(100% - 16px)); padding: 11px; gap: 8px; -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%); }
   .dashboard-summary-header { grid-template-columns: 30px minmax(0,1fr) auto; gap: 6px; }
   .dashboard-summary-emblem { width: 30px; height: 30px; }
   .dashboard-summary-title h2 { font-size: 11px; }
@@ -1058,6 +1061,33 @@
 .wind-speed-ticks>span:nth-child(9) { left: 50%; }
 .wind-speed-ticks>span:nth-child(10) { left: 75%; }
 .wind-speed-ticks>span:nth-child(11) { left: 100%; transform: translateX(-100%); }
+
+/* Terrain profile controls: place real endpoints and keep the DEM sample legible. */
+.terrain-map-controls { max-height: calc(100% - 24px); overflow-y: auto; scrollbar-color: #39535f transparent; scrollbar-width: thin; }
+.terrain-transect-editor { display: grid; gap: 7px; padding: 9px; border: 1px solid rgba(168,213,220,.18); border-radius: 9px; background: linear-gradient(145deg,rgba(18,39,51,.58),rgba(6,19,28,.48)); box-shadow: inset 0 1px 0 rgba(235,251,252,.05); }
+.terrain-transect-editor>div:first-child { display: grid; gap: 3px; }
+.terrain-transect-editor>div:first-child>b { color: #e3eef0; font-size: 9px; }
+.terrain-transect-editor>div:first-child>small { color: #9db3ba; font-size: 8px; }
+.terrain-transect-actions { display: grid; grid-template-columns: 1fr 1fr 34px; gap: 5px; }
+.terrain-transect-actions button { min-height: 34px; border: 1px solid rgba(141,189,197,.24); border-radius: 7px; background: rgba(9,24,33,.72); color: #d5e3e6; font-size: 9px; font-weight: 600; cursor: pointer; }
+.terrain-transect-actions button:hover,.terrain-transect-actions button.selected { border-color: rgba(48,220,219,.7); background: rgba(37,210,216,.14); color: #a5f3ee; box-shadow: inset 0 1px 0 rgba(240,255,255,.08),0 0 15px rgba(37,210,216,.08); }
+.terrain-transect-actions button.reset { color: #a9bdc2; font-size: 16px; }
+.terrain-transect-prompt { margin: 0; color: #a8ece7; font-size: 8px; line-height: 1.4; }
+.terrain-map-controls .terrain-map-key { color: #b5c6ca; font-size: 8px; line-height: 1.45; }
+.terrain-profile-strip { border-color: rgba(167,220,226,.22); border-radius: 11px; background: linear-gradient(145deg,rgba(17,35,46,.88),rgba(7,19,28,.85)); box-shadow: inset 0 1px 0 rgba(238,251,252,.07); }
+.terrain-profile-strip>header b { font-size: 10px; }
+.terrain-profile-strip>header small,.terrain-profile-strip>header>span { font-size: 8px; }
+@media (max-width: 1100px) and (min-width: 761px) {
+  .terrain-map-controls { max-height: calc(100% - 24px); }
+  .terrain-transect-actions button { min-height: 32px; }
+}
+@media (max-width: 760px) {
+  .terrain-map-controls { max-height: calc(100% - 16px); overflow-y: auto; }
+  .terrain-transect-editor { gap: 5px; padding: 7px; }
+  .terrain-transect-actions { grid-template-columns: 1fr 1fr 30px; gap: 4px; }
+  .terrain-transect-actions button { min-height: 32px; font-size: 8px; }
+  .terrain-transect-prompt { font-size: 7px; }
+}
 
 /* Compare reference layout: setup over the map, actual trend charts at right. */
 .compare-workspace { grid-template-rows: minmax(0,1fr); }

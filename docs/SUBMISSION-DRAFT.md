@@ -14,6 +14,8 @@ Fire calendars can suggest a false change when sensor products with different sp
 
 The prototype does **not** claim validated historical harmonization, a calibrated agreement score, incident confirmation from a hotspot, or a seasonal anomaly result. The historical NASA standard archive and an independent fire-perimeter evaluation are still outstanding. CWFIS Fire M3 is displayed only as mixed-source regional context. The team has reviewed and accepted the required CWFIS End-User Agreement for this project; the server-side access flag is enabled for the local demo.
 
+For a reproducible regional context query near the Pembina Complex origin area (May 4–20, 2023; fetched November 14, 2026), the CWFIS service returned 15,457 hotspot rows across NASA, NASA_can, and USFS source labels. These are source-labelled detection rows, not 15,457 fires; overlapping feeds and unknown coverage prevent treating them as independent or complete activity counts. The demo exposes this provenance beside the daily series.
+
 ## 90-second demonstration
 
 1. **Start with the decision problem (10 s).** “No row is not proof that no fire occurred. Dates outside the public feed window are marked unknown; dates inside it show returned detections, not a measure of satellite observation coverage.”
