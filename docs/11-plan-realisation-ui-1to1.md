@@ -131,3 +131,10 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Le rendu animé du vent passe par un canvas superposé à la carte, afin d’éviter la mise à jour continue de centaines d’objets GeoJSON. Les traces sont plus contrastées; en mode de réduction des animations, les flèches statiques restent disponibles.
 - Le flux public FIRMS accepte des lignes datées même quand elles ne couvrent pas toute la fenêtre demandée. Les jours avant/après la fenêtre glissante restent explicitement inconnus au lieu d’être comptés comme zéro.
 - Vérification : `npm run build` réussi et `git diff --check` propre. La revue visuelle automatique n’a pas pu démarrer dans l’environnement Chrome isolé; le lancement s’est arrêté avec une erreur GPU. Aucune capture non validée n’est conservée. Cette tranche ne valide donc pas encore la parité visuelle complète.
+
+## Avancement — intégrité du champ pendant le déplacement
+
+- Toute nouvelle emprise met désormais la grille de vent en état `loading` immédiatement, avant le délai anti-rebond et l’appel météo. Les anciennes particules et le raster sont cachés pendant ce recalcul; ils ne sont pas projetés sur une caméra qui a changé.
+- L’animation est suspendue pendant les mouvements de la caméra. Le badge, la légende et le panneau météo distinguent `ready`, `loading` et `error`; une erreur conserve le dernier champ en mémoire pour diagnostic, sans l’afficher sur la nouvelle emprise.
+- Cette règle est commune au Dashboard, Live Map, Terrain, Scenario et aux deux cartes de Compare, car elles réutilisent le même composant `MapCanvas`.
+- Vérification de cette tranche : `npm run build` réussi, `git diff --check` propre. Reste à vérifier le parcours de pan/zoom et la parité visuelle dans un navigateur opérationnel.

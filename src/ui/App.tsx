@@ -372,12 +372,14 @@ function cameraWindViewport(instance: MapLibreMap): WindViewport {
 
 function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
   const [field, setField] = useState<WindFieldState>({ state: 'loading', nodes: [], retrievedAt: null })
+  const [retry, setRetry] = useState(0)
   const gridSignature = viewport
     ? [viewport.south, viewport.west, viewport.north, viewport.east].map((value) => Math.round(value * 4) / 4).join(',')
     : `${Math.round(lat * 10) / 10},${Math.round(lon * 10) / 10}`
 
   useEffect(() => {
     const controller = new AbortController()
+    setField((current) => current.state === 'loading' ? current : { ...current, state: 'loading', error: undefined })
     const timeout = window.setTimeout(() => {
       const coordinates = createWindGrid(lat, lon, viewport)
       const params = new URLSearchParams({
@@ -422,9 +424,9 @@ function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
         })
     }, 700)
     return () => { window.clearTimeout(timeout); controller.abort() }
-  }, [gridSignature])
+  }, [gridSignature, retry])
 
-  return field
+  return { ...field, retry: () => setRetry((value) => value + 1) }
 }
 
 type WindVector = { latitude: number; longitude: number; eastKmh: number; northKmh: number; speedKmh: number; directionTo: number }
@@ -578,7 +580,7 @@ function whenMapStyleReady(instance: MapLibreMap, callback: () => void) {
   return () => instance.off('style.load', onStyleLoad)
 }
 
-function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, onCameraChange, syncGroup, terrainTransect }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; onCameraChange: (viewport: WindViewport) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][] }) {
+function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windState, onRetryWind, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, onCameraChange, syncGroup, terrainTransect }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windState: WindFieldState['state']; onRetryWind: () => void; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; onCameraChange: (viewport: WindViewport) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][] }) {
   const element = useRef<HTMLDivElement>(null)
   const windFlowCanvas = useRef<HTMLCanvasElement>(null)
   const map = useRef<MapLibreMap | null>(null)
@@ -815,14 +817,16 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       if (!instance.getSource('albertaDem')) return
       ensureWindLayers(instance)
       if (vectors.length) ensureWindSpeedLayer(instance, vectors)
+      const fieldReady = windState === 'ready' && vectors.length > 0
+      const windRendered = windVisible && fieldReady
       if (instance.getLayer('osm-raster-base')) {
-        instance.setPaintProperty('osm-raster-base', 'raster-brightness-min', windVisible ? 0.18 : 0.02)
-        instance.setPaintProperty('osm-raster-base', 'raster-brightness-max', windVisible ? 0.92 : 0.24)
+        instance.setPaintProperty('osm-raster-base', 'raster-brightness-min', windRendered ? 0.18 : 0.02)
+        instance.setPaintProperty('osm-raster-base', 'raster-brightness-max', windRendered ? 0.92 : 0.24)
       }
-      if (instance.getLayer('wind-speed-raster')) instance.setLayoutProperty('wind-speed-raster', 'visibility', windVisible ? 'visible' : 'none')
-      if (instance.getLayer('wind-vector-arrows')) instance.setLayoutProperty('wind-vector-arrows', 'visibility', windVisible && reducedMotion ? 'visible' : 'none')
-      if (!windVisible || !vectors.length) clearTrails()
-      if (!windVisible || !vectors.length) {
+      if (instance.getLayer('wind-speed-raster')) instance.setLayoutProperty('wind-speed-raster', 'visibility', windVisible && fieldReady ? 'visible' : 'none')
+      if (instance.getLayer('wind-vector-arrows')) instance.setLayoutProperty('wind-vector-arrows', 'visibility', windVisible && fieldReady && reducedMotion ? 'visible' : 'none')
+      if (!windVisible || !fieldReady) clearTrails()
+      if (!windVisible || !fieldReady) {
         ;(instance.getSource('wind-vector-grid') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
         return
       }
@@ -866,7 +870,8 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       let previousFrame = performance.now()
       timer = setInterval(() => {
         if (document.visibilityState !== 'visible') return
-        if (!windVisible || !vectors.length) { clearTrails(); return }
+        if (instance.isMoving()) { previousFrame = performance.now(); clearTrails(); return }
+        if (!windVisible || windState !== 'ready' || !vectors.length) { clearTrails(); return }
         const now = performance.now()
         const elapsedSeconds = Math.min((now - previousFrame) / 1000, 0.25)
         previousFrame = now
@@ -941,7 +946,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       clearTrails()
     }
-  }, [windNodes, windTime, windVisible, reducedMotion, windCanvasSize.width, windCanvasSize.height])
+  }, [windNodes, windTime, windState, windVisible, reducedMotion, windCanvasSize.width, windCanvasSize.height])
 
   useEffect(() => {
     if (!map.current) return
@@ -957,12 +962,12 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     <canvas ref={windFlowCanvas} className="wind-flow-canvas" aria-hidden="true" />
     <div className="map-coordinates"><Compass size={13} /> {lat.toFixed(3)}° N · {Math.abs(lon).toFixed(3)}° W</div>
     {direction !== undefined && !windVisible && <div className="map-wind" style={{ transform: `rotate(${direction}deg)` }} aria-label={`Wind blows toward ${windDirectionLabel(direction)}`}><Wind size={24} /></div>}
-    <div className="map-field-badge"><span className={windVisible && windNodes.length ? 'field-live-dot' : ''} />{windVisible ? `${windNodes.length || '—'}-point wind field` : 'Wind field hidden'} · {terrainEnabled ? '3D relief' : '2D'}</div>
-    {windVisible && windNodes.length > 0 && <div className="wind-speed-legend" aria-label="Wind speed scale in kilometres per hour">
-      <div className="wind-speed-legend-heading"><span>WIND SPEED <small>km/h</small></span><b><span><i className="wind-stat-dot average" />{meanWindSpeed === null ? '—' : `${Math.round(meanWindSpeed)} avg`}</span><span><i className="wind-stat-dot peak" />{peakWindSpeed === null ? '—' : `${Math.round(peakWindSpeed)} peak`}</span></b></div>
+    <div className={`map-field-badge ${windVisible && windState === 'loading' ? 'field-loading' : windVisible && windState === 'error' ? 'field-error' : ''}`}><span className={windVisible && windState === 'ready' && windNodes.length ? 'field-live-dot' : ''} />{!windVisible ? 'Wind field hidden' : windState === 'loading' ? 'Updating wind field…' : windState === 'error' ? 'Wind unavailable' : `${windNodes.length || '—'}-point wind field`} · {terrainEnabled ? '3D relief' : '2D'}</div>
+    {windVisible && (windNodes.length > 0 || windState !== 'ready') && <div className={`wind-speed-legend ${windState !== 'ready' ? `wind-field-${windState}` : ''}`} aria-label="Wind speed scale in kilometres per hour">
+      <div className="wind-speed-legend-heading"><span>WIND SPEED <small>km/h</small></span><b>{windState !== 'ready' ? <span>{windState === 'loading' ? 'Updating forecast…' : 'Forecast unavailable'}</span> : <><span><i className="wind-stat-dot average" />{meanWindSpeed === null ? '—' : `${Math.round(meanWindSpeed)} avg`}</span><span><i className="wind-stat-dot peak" />{peakWindSpeed === null ? '—' : `${Math.round(peakWindSpeed)} peak`}</span></>}</b></div>
       <div className="wind-speed-ramp" />
       <div className="wind-speed-ticks"><span>0</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>60</span><span>80</span><span>100</span><span>150</span><span>200+</span></div>
-      <small>{reducedMotion ? 'Arrows show wind direction' : 'Animated streaks show wind direction'} <span>·</span> {windTime ? `${new Date(windTime).toISOString().slice(11, 16)} UTC forecast` : 'time unavailable'}</small>
+      <small>{windState === 'loading' ? 'Refreshing for the visible map extent; stale vectors are hidden' : windState === 'error' ? <>No field is drawn because the current map extent could not be refreshed · <button type="button" className="wind-legend-retry" onClick={onRetryWind}>Retry wind</button></> : reducedMotion ? 'Arrows show wind direction' : 'Animated streaks show wind direction'} <span>·</span> {windTime ? `${new Date(windTime).toISOString().slice(11, 16)} UTC forecast` : 'time unavailable'}</small>
     </div>}
     <div className="map-caption">Basemap © OpenStreetMap · Terrain © Mapzen · Wind: Open-Meteo</div>
   </div>
@@ -1350,7 +1355,7 @@ export function App() {
       <div className="weather-primary"><div className="wind-glyph" style={{ transform: `rotate(${directionTo}deg)` }}><Wind size={25} /></div><div className="wind-value">{Math.round(displayWind)} <small>km/h</small><span>Blowing toward {windDirectionLabel(directionTo ?? 0)} · gusts {Math.round(weather.gusts)} km/h</span></div></div>
       <div className="weather-grid"><div className="weather-metric"><span><CloudRain size={15} /> Precipitation</span><b>{weather.precipitation.toFixed(1)} <small>mm</small></b><small>selected hour</small></div><div className="weather-metric"><span><Activity size={15} /> Temperature</span><b>{weather.temperature.toFixed(1)} <small>°C</small></b><small>2 m above ground</small></div></div>
       <div className="weather-grid"><div className="weather-metric"><span><Activity size={15} /> Relative humidity</span><b>{Math.round(weather.humidity)} <small>%</small></b><small>2 m above ground</small></div><div className="weather-metric"><span><Wind size={15} /> Wind gust</span><b>{Math.round(weather.gusts)} <small>km/h</small></b><small>10 m above ground</small></div></div>
-      <div className={`wind-field-state ${windField.state}`}><span className="wind-state-mark"><Wind size={14} /></span><div><b>{windField.state === 'ready' ? `${windField.nodes.length} forecast points feeding the visible map` : windField.state === 'loading' ? windField.nodes.length ? 'Updating the wind grid for this view…' : 'Building the local wind field…' : windField.nodes.length ? 'Refresh failed · previous wind grid retained' : 'Wind field unavailable'}</b><small>{windField.state === 'ready' ? `25 forecast points interpolated for the selected map extent and ${new Date(weather.time).toISOString().slice(0, 16).replace('T', ' ')} UTC; particles show direction and relative speed, not travel time` : windField.state === 'error' ? windField.nodes.length ? `${windField.error ?? 'Wind service unavailable'} · last grid retrieved ${windField.retrievedAt ? new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'time unknown'}` : 'No cached grid is available for this view. Check the connection, then retry.' : windField.nodes.length ? `Showing the last retrieved grid${windField.retrievedAt ? ` from ${new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : ''} while the settled map extent loads.` : 'Fetching hourly speed and direction across the map extent.'}</small></div></div>
+      <div className={`wind-field-state ${windField.state}`}><span className="wind-state-mark"><Wind size={14} /></span><div><b>{windField.state === 'ready' ? `${windField.nodes.length} forecast points feeding the visible map` : windField.state === 'loading' ? windField.nodes.length ? 'Updating the wind grid for this view…' : 'Building the local wind field…' : windField.nodes.length ? 'Refresh failed · previous grid hidden' : 'Wind field unavailable'}</b><small>{windField.state === 'ready' ? `25 forecast points interpolated for the selected map extent and ${new Date(weather.time).toISOString().slice(0, 16).replace('T', ' ')} UTC; particles show direction and relative speed, not travel time` : windField.state === 'error' ? windField.nodes.length ? `${windField.error ?? 'Wind service unavailable'} · last grid from ${windField.retrievedAt ? new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'time unknown'} is kept in memory but is not drawn over this extent.` : 'No cached grid is available for this view. Check the connection, then retry.' : windField.nodes.length ? `Hiding the previous field while this extent loads${windField.retrievedAt ? ` · previous grid retrieved ${new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : ''}.` : 'Fetching hourly speed and direction across the map extent.'}</small>{windField.state === 'error' && <button type="button" className="text-button wind-field-retry" onClick={windField.retry}>Retry wind grid</button>}</div></div>
       <div className="source-note"><Clock3 size={14} /><span>Valid {new Date(weather.time).toLocaleString('en-CA', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC · Retrieved {retrievedAt ? new Date(retrievedAt).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' }) : '—'} UTC · Open-Meteo</span></div>
     </>}
     <div className="important-note"><Flame size={15} /><span>Satellite thermal detections are not confirmed fires. No historical baseline, incident perimeter or suppression status is available here.</span></div>
@@ -1436,12 +1441,12 @@ export function App() {
         <div className="map-column">
           <div className="map-toolbar"><div className="map-title"><span className="eyebrow-icon"><Map size={15} /></span><div><strong>{location.name}</strong><small>{active === 'Scenario' ? 'Hypothetical inputs · no spread perimeter available' : active === 'Compare' ? 'MODIS + VIIRS detections · shared area and UTC window' : `${windField.state === 'ready' ? `${windField.nodes.length} point live wind field` : 'Live wind field loading'} · click map to inspect a location`}</small></div></div><div className="map-actions"><button className="map-mode-button" aria-pressed={isFieldMobile ? false : terrainEnabled} disabled={isFieldMobile} title={isFieldMobile ? 'Field Situation uses a lighter 2D map on mobile' : terrainEnabled ? 'Switch to flat 2D map' : 'Enable 3D terrain'} onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>{isFieldMobile ? '2D' : terrainEnabled ? '3D' : '2D'}</span></button><button className={`map-mode-button ${windVisible ? 'mode-active' : ''}`} aria-pressed={windVisible} title={windVisible ? 'Hide animated wind field' : 'Show animated wind field'} onClick={() => setWindVisible((value) => !value)}><Wind size={15} /><span>Wind</span></button><button className="icon-button" title="Search map" aria-label="Search map" onClick={() => document.querySelector<HTMLSelectElement>('.location-control select')?.focus()}><Search size={16} /></button><button className="icon-button" title="Map layers" aria-label="Map layers" onClick={() => setActive('Live Map')}><Layers3 size={16} /></button></div></div>
           {active === 'Compare' ? <div className={`compare-map-stage ${compareMode}`}>
-            <div className="compare-map-a"><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareA.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
-            <div className="compare-map-b" style={compareMode === 'swipe' ? { clipPath: `inset(0 0 0 ${compareSplit}%)` } : undefined}><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareB.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
+            <div className="compare-map-a"><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareA.observations} windNodes={windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
+            <div className="compare-map-b" style={compareMode === 'swipe' ? { clipPath: `inset(0 0 0 ${compareSplit}%)` } : undefined}><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareB.observations} windNodes={windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
             <div className="compare-mode-control" role="group" aria-label="Comparison map layout"><button className={compareMode === 'swipe' ? 'selected' : ''} onClick={() => setCompareMode('swipe')} aria-pressed={compareMode === 'swipe'}>↔ Swipe</button><button className={compareMode === 'side-by-side' ? 'selected' : ''} onClick={() => setCompareMode('side-by-side')} aria-pressed={compareMode === 'side-by-side'}>▥ Side-by-side</button></div>
             {compareMode === 'swipe' && <><div className="compare-swipe-divider" style={{ left: `${compareSplit}%` }} aria-hidden="true"><span>↔</span></div><input className="compare-swipe-input" type="range" min="15" max="85" value={compareSplit} onChange={(event) => setCompareSplit(Number(event.target.value))} aria-label="Adjust comparison divider" /></>}
             <div className="compare-map-chip modis"><i />{compareSourceA.replaceAll('_', ' ')} · {compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : compareA.state.toUpperCase()}</div><div className="compare-map-chip viirs"><i />{compareSourceB.replaceAll('_', ' ')} · {compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : compareB.state.toUpperCase()}</div>
-          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={active === 'Scenario' ? scenarioWindNodes : windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} />}
+          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={active === 'Scenario' ? scenarioWindNodes : windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} />}
           {active === 'Live Map' && liveMapDock}
           {active === 'Scenario' && <section className="scenario-environment-panel" aria-label="Environmental inputs for the scenario">
             <header><span><Mountain size={16} /></span><div><b>Environmental inputs</b><small>Context for this map view</small></div><span className={`scenario-context-badge ${weather ? 'available' : ''}`}>{weather ? 'LIVE' : 'NO DATA'}</span></header>
