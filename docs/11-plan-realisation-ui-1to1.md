@@ -124,3 +124,10 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - La vue Scénario affiche maintenant à gauche les valeurs météo du forecast sélectionné (vent à 10 m, rafales, pluie horaire, humidité à 2 m) ainsi que l’échantillon de pente DEM quand le chargement est terminé. L’interface marque explicitement comme manquants le périmètre daté, le type/humidité de combustible et le modèle validé; elle n’invente pas de couloir de propagation.
 - Le curseur de vent hypothétique agit maintenant sur les vitesses des échantillons du champ de vent de la carte, en conservant les directions et le profil spatial relatif du forecast. La légende reprend ces vitesses; « Use forecast » remet le champ d’origine. Un texte explique qu’il s’agit d’une sensibilité uniforme et non d’un calcul de propagation.
 - Vérification de cette tranche : `npm run build` réussi; `git diff --check` propre. Une revue visuelle de cette nouvelle composition reste à faire sur le viewport de référence avant de la qualifier de parité 1:1.
+
+## Avancement — dashboard vitré et vent animé
+
+- Le résumé de zone du Dashboard a reçu une surface vitrée plus lisible, un contraste renforcé, une hiérarchie de données plus nette, un bouton d’action plus visible et des tailles adaptées aux écrans étroits. La barre latérale et la palette restent celles du produit.
+- Le rendu animé du vent passe par un canvas superposé à la carte, afin d’éviter la mise à jour continue de centaines d’objets GeoJSON. Les traces sont plus contrastées; en mode de réduction des animations, les flèches statiques restent disponibles.
+- Le flux public FIRMS accepte des lignes datées même quand elles ne couvrent pas toute la fenêtre demandée. Les jours avant/après la fenêtre glissante restent explicitement inconnus au lieu d’être comptés comme zéro.
+- Vérification : `npm run build` réussi et `git diff --check` propre. La revue visuelle automatique n’a pas pu démarrer dans l’environnement Chrome isolé; le lancement s’est arrêté avec une erreur GPU. Aucune capture non validée n’est conservée. Cette tranche ne valide donc pas encore la parité visuelle complète.

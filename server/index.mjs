@@ -191,12 +191,14 @@ async function getPublicNrtFirms(response, { source, bbox, days, requestedStartD
 
   const queryEndDate = requestedStartDate ? shiftUtcDay(requestedStartDate, days - 1) : todayUtc
   const queryStartDate = requestedStartDate ?? shiftUtcDay(queryEndDate, 1 - days)
+  // A rolling seven-day feed can include part of the calendar date seven days ago.
+  const publicWindowStartDate = shiftUtcDay(todayUtc, -7)
   const feedDates = feed.rows.map((row) => validateUtcDate(row.acq_date)).filter(Boolean).sort()
   const minFeedDate = feedDates[0]
   const maxFeedDate = feedDates.at(-1)
-  if (!minFeedDate || !maxFeedDate) return json(response, 502, { code: 'firms_public_feed_empty', message: 'NASA FIRMS public near-real-time feed did not contain dated observations.' })
-  if (queryStartDate < minFeedDate) {
-    return getLocalArchiveFirms(response, { source, bbox, days, queryStartDate, queryEndDate, publicFeedRange: { minDate: minFeedDate, maxDate: maxFeedDate } })
+  if (feedDates.length === 0) return json(response, 502, { code: 'firms_public_feed_empty', message: 'NASA FIRMS public near-real-time feed did not contain dated observations.' })
+  if (queryEndDate < publicWindowStartDate) {
+    return getLocalArchiveFirms(response, { source, bbox, days, queryStartDate, queryEndDate, publicFeedRange: { minDate: publicWindowStartDate, maxDate: todayUtc } })
   }
 
   const [west, south, east, north] = bbox
@@ -219,7 +221,10 @@ async function getPublicNrtFirms(response, { source, bbox, days, requestedStartD
     observations,
     accessMode: 'public-nrt-canada-csv',
     sourceUrl: feed.sourceUrl,
-    sourceDateRange: { minDate: minFeedDate, maxDate: maxFeedDate },
+    sourceDateRange: { minDate: publicWindowStartDate, maxDate: todayUtc },
+    detectionDateRange: { minDate: minFeedDate, maxDate: maxFeedDate },
+    coverageState: queryStartDate < publicWindowStartDate ? 'partial' : 'public-feed-window',
+    coverageCaveat: 'The feed is available for a rolling seven-day date window; rows are detections, not a per-pixel observation-coverage denominator. Dates before the window are not queried.',
   }, { 'x-data-cache': 'public-feed' })
 }
 

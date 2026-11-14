@@ -197,10 +197,11 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
         : null
       setSourceDateRange(nextSourceDateRange)
       const count = Number.isSafeInteger(payload.count) && payload.count >= 0 ? payload.count : (Array.isArray(payload.observations) ? payload.observations.length : 0)
-      const sourceWindowIncomplete = nextAccessMode === 'public-nrt-canada-csv' && nextSourceDateRange && typeof payload.queryEndDate === 'string' && nextSourceDateRange.maxDate < payload.queryEndDate
+      const sourceWindowIncomplete = nextAccessMode === 'public-nrt-canada-csv' && nextSourceDateRange && typeof payload.queryStartDate === 'string' && typeof payload.queryEndDate === 'string'
+        && (nextSourceDateRange.minDate > payload.queryStartDate || nextSourceDateRange.maxDate < payload.queryEndDate)
       setMessage(nextAccessMode === 'local-validated-archive'
         ? count === 0 ? 'The accepted local import returned no detection rows for this area and time window. Coverage is unknown; this does not establish that no fire is present.' : `${count.toLocaleString()} rows returned from ${importedSources.length} QA-accepted local import(s). Observation coverage remains unknown.`
-        : sourceWindowIncomplete ? `Public FIRMS rows are present through ${nextSourceDateRange.maxDate}; later requested dates have unknown status.`
+        : sourceWindowIncomplete ? `Public FIRMS is available from ${nextSourceDateRange.minDate} through ${nextSourceDateRange.maxDate}; requested dates outside that window have unknown status.`
           : count === 0 ? 'NASA returned a valid response with no detections in this area and time window. This does not establish that no fire is present.' : `${count.toLocaleString()} satellite detections returned for the selected product and window.`)
       setState('ready')
     } catch (error) {
@@ -485,27 +486,10 @@ function createWindArrow(): ImageData {
   return context.getImageData(0, 0, canvas.width, canvas.height)
 }
 
-function createWindParticle(): ImageData {
-  const canvas = document.createElement('canvas')
-  canvas.width = 64; canvas.height = 64
-  const context = canvas.getContext('2d')
-  if (!context) return new ImageData(64, 64)
-  const glow = context.createLinearGradient(12, 32, 54, 32)
-  glow.addColorStop(0, '#ffffff00')
-  glow.addColorStop(0.56, '#e9ffff70')
-  glow.addColorStop(1, '#ffffff')
-  context.shadowColor = '#f5ffff'; context.shadowBlur = 8
-  context.strokeStyle = glow; context.lineWidth = 5; context.lineCap = 'round'
-  context.beginPath(); context.moveTo(11, 32); context.lineTo(54, 32); context.stroke()
-  context.shadowBlur = 0; context.strokeStyle = '#ffffff'; context.lineWidth = 1.7
-  context.beginPath(); context.moveTo(17, 32); context.lineTo(52, 32); context.stroke()
-  return context.getImageData(0, 0, canvas.width, canvas.height)
-}
-
 function windSpeedColor(speedKmh: number): [number, number, number] {
   const stops: Array<[number, number, number, number]> = [
-    [0, 173, 182, 182], [10, 169, 213, 219], [20, 127, 190, 197], [35, 158, 203, 170],
-    [50, 242, 197, 94], [70, 239, 150, 62], [100, 228, 85, 75], [150, 218, 117, 182], [200, 23, 60, 73],
+    [0, 76, 137, 151], [10, 42, 145, 170], [20, 44, 173, 195], [35, 174, 205, 159],
+    [50, 246, 202, 69], [70, 244, 139, 47], [100, 224, 70, 58], [150, 207, 82, 168], [200, 22, 59, 72],
   ]
   const value = Math.max(0, Math.min(200, speedKmh))
   const upperIndex = stops.findIndex(([stop]) => stop >= value)
@@ -538,7 +522,7 @@ function createWindSpeedImage(vectors: WindVector[]) {
       image.data[offset] = red; image.data[offset + 1] = green; image.data[offset + 2] = blue
       const edge = Math.min(1, x / 12, y / 12, (size - 1 - x) / 12, (size - 1 - y) / 12)
       const feather = edge * edge * (3 - 2 * edge)
-      image.data[offset + 3] = Math.round(190 * Math.min(1, 0.48 + vector.speedKmh / 200) * feather)
+      image.data[offset + 3] = Math.round(232 * Math.min(1, 0.62 + vector.speedKmh / 175) * feather)
     }
   }
   context.putImageData(image, 0, 0)
@@ -567,11 +551,8 @@ function ensureWindSpeedLayer(instance: MapLibreMap, vectors: WindVector[]) {
 
 function ensureWindLayers(instance: MapLibreMap) {
   if (!instance.hasImage('wind-vector-arrow')) instance.addImage('wind-vector-arrow', createWindArrow(), { pixelRatio: 2 })
-  if (!instance.hasImage('wind-particle-glow')) instance.addImage('wind-particle-glow', createWindParticle(), { pixelRatio: 2 })
   const empty = { type: 'FeatureCollection' as const, features: [] }
   if (!instance.getSource('wind-vector-grid')) instance.addSource('wind-vector-grid', { type: 'geojson', data: empty })
-  if (!instance.getSource('wind-flow-trails')) instance.addSource('wind-flow-trails', { type: 'geojson', lineMetrics: true, data: empty })
-  if (!instance.getSource('wind-flow-heads')) instance.addSource('wind-flow-heads', { type: 'geojson', data: empty })
   if (!instance.getLayer('wind-vector-arrows')) instance.addLayer({
     id: 'wind-vector-arrows', type: 'symbol', source: 'wind-vector-grid',
     layout: {
@@ -584,29 +565,6 @@ function ensureWindLayers(instance: MapLibreMap) {
       'icon-ignore-placement': true,
     },
     paint: { 'icon-opacity': 0.92 },
-  })
-  if (!instance.getLayer('wind-flow-trails')) instance.addLayer({
-    id: 'wind-flow-trails', type: 'line', source: 'wind-flow-trails',
-    paint: {
-      'line-color': '#f5ffff',
-      'line-width': ['interpolate', ['linear'], ['get', 'speedKmh'], 0, 1.2, 35, 1.8, 70, 2.5],
-      'line-opacity': 0.88,
-      'line-blur': 0.25,
-    },
-  })
-  if (!instance.getLayer('wind-flow-heads')) instance.addLayer({
-    id: 'wind-flow-heads', type: 'symbol', source: 'wind-flow-heads',
-    layout: {
-      'symbol-placement': 'point',
-      'icon-image': 'wind-particle-glow',
-      'icon-size': ['interpolate', ['linear'], ['get', 'speedKmh'], 0, 0.46, 20, 0.64, 65, 0.86],
-      'icon-rotate': ['get', 'directionTo'],
-      'icon-rotation-alignment': 'map',
-      'symbol-height-offset': 12,
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true,
-    },
-    paint: { 'icon-opacity': 0.95 },
   })
 }
 
@@ -622,6 +580,7 @@ function whenMapStyleReady(instance: MapLibreMap, callback: () => void) {
 
 function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, onCameraChange, syncGroup, terrainTransect }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; onCameraChange: (viewport: WindViewport) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][] }) {
   const element = useRef<HTMLDivElement>(null)
+  const windFlowCanvas = useRef<HTMLCanvasElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
   const [windCanvasSize, setWindCanvasSize] = useState({ width: 0, height: 0 })
@@ -844,6 +803,13 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     const vectors = windVectorsAt(windNodes, windTime)
     let timer: ReturnType<typeof setInterval> | null = null
     let removeLoadListener = () => {}
+    let particles: Array<{ longitude: number; latitude: number; trail: Array<[number, number]>; speedKmh: number }> = []
+    const overlay = windFlowCanvas.current
+    const context = overlay?.getContext('2d') ?? null
+    const clearTrails = () => {
+      particles.forEach((particle) => { particle.trail = [] })
+      if (overlay && context) context.clearRect(0, 0, overlay.clientWidth, overlay.clientHeight)
+    }
     const updateWind = () => {
       if (!instance.getStyle().layers.some((layer) => layer.id === 'osm-raster-base')) return
       if (!instance.getSource('albertaDem')) return
@@ -855,13 +821,9 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       }
       if (instance.getLayer('wind-speed-raster')) instance.setLayoutProperty('wind-speed-raster', 'visibility', windVisible ? 'visible' : 'none')
       if (instance.getLayer('wind-vector-arrows')) instance.setLayoutProperty('wind-vector-arrows', 'visibility', windVisible && reducedMotion ? 'visible' : 'none')
-      for (const id of ['wind-flow-trails', 'wind-flow-heads']) {
-        if (instance.getLayer(id)) instance.setLayoutProperty(id, 'visibility', windVisible && !reducedMotion ? 'visible' : 'none')
-      }
+      if (!windVisible || !vectors.length) clearTrails()
       if (!windVisible || !vectors.length) {
         ;(instance.getSource('wind-vector-grid') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
-        ;(instance.getSource('wind-flow-trails') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
-        ;(instance.getSource('wind-flow-heads') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
         return
       }
       const vectorSource = instance.getSource('wind-vector-grid') as GeoJSONSource
@@ -870,12 +832,13 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         geometry: { type: 'Point' as const, coordinates: [vector.longitude, vector.latitude] },
         properties: { speedKmh: vector.speedKmh, directionTo: vector.directionTo },
       }))
-      vectorSource.setData({ type: 'FeatureCollection', features: arrowFeatures } as GeoJSON.FeatureCollection)
-      if (reducedMotion || document.visibilityState !== 'visible') {
-        ;(instance.getSource('wind-flow-trails') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
-        ;(instance.getSource('wind-flow-heads') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [] })
+      if (reducedMotion) {
+        vectorSource.setData({ type: 'FeatureCollection', features: arrowFeatures } as GeoJSON.FeatureCollection)
+        clearTrails()
         return
       }
+      vectorSource.setData({ type: 'FeatureCollection', features: [] })
+      if (!overlay || !context || document.visibilityState !== 'visible') { clearTrails(); return }
       const particleBounds = {
         west: Math.min(...vectors.map((vector) => vector.longitude)), east: Math.max(...vectors.map((vector) => vector.longitude)),
         south: Math.min(...vectors.map((vector) => vector.latitude)), north: Math.max(...vectors.map((vector) => vector.latitude)),
@@ -884,9 +847,18 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       const canvasWidth = windCanvasSize.width || canvas.clientWidth
       const canvasHeight = windCanvasSize.height || canvas.clientHeight
       const canvasArea = canvasWidth * canvasHeight
-      const particleCount = Math.min(360, Math.max(88, Math.round(canvasArea / 1150)))
-      const animationInterval = Math.max(70, Math.min(110, Math.round(110 - canvasArea / 10_000)))
-      const particles = Array.from({ length: particleCount }, () => ({
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+      const backingWidth = Math.max(1, Math.round(canvasWidth * pixelRatio))
+      const backingHeight = Math.max(1, Math.round(canvasHeight * pixelRatio))
+      if (overlay.width !== backingWidth || overlay.height !== backingHeight) {
+        overlay.width = backingWidth
+        overlay.height = backingHeight
+      }
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+      context.clearRect(0, 0, canvasWidth, canvasHeight)
+      const particleCount = Math.min(320, Math.max(72, Math.round(canvasArea / 1800)))
+      const animationInterval = Math.max(105, Math.min(135, Math.round(135 - canvasArea / 16_000)))
+      particles = Array.from({ length: particleCount }, () => ({
         longitude: particleBounds.west + Math.random() * (particleBounds.east - particleBounds.west),
         latitude: particleBounds.south + Math.random() * (particleBounds.north - particleBounds.south),
         trail: [] as Array<[number, number]>, speedKmh: 0,
@@ -894,11 +866,11 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       let previousFrame = performance.now()
       timer = setInterval(() => {
         if (document.visibilityState !== 'visible') return
+        if (!windVisible || !vectors.length) { clearTrails(); return }
         const now = performance.now()
         const elapsedSeconds = Math.min((now - previousFrame) / 1000, 0.25)
         previousFrame = now
-        const lineFeatures = []
-        const headFeatures = []
+        context.clearRect(0, 0, canvasWidth, canvasHeight)
         for (const particle of particles) {
           const vector = interpolateWind(vectors, particle.latitude, particle.longitude)
           if (!vector || vector.speedKmh < 0.2) {
@@ -908,7 +880,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
             continue
           }
           const pixel = instance.project([particle.longitude, particle.latitude])
-          const speedPixelsPerSecond = 26 + vector.speedKmh * 0.5
+          const speedPixelsPerSecond = 42 + vector.speedKmh * 0.8
           const nextPixel = [
             pixel.x + (vector.eastKmh / vector.speedKmh) * speedPixelsPerSecond * elapsedSeconds,
             pixel.y - (vector.northKmh / vector.speedKmh) * speedPixelsPerSecond * elapsedSeconds,
@@ -917,38 +889,58 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
           particle.longitude = nextPoint.lng
           particle.latitude = nextPoint.lat
           particle.speedKmh = vector.speedKmh
-          particle.trail.push([particle.longitude, particle.latitude])
-          if (particle.trail.length > 7) particle.trail.shift()
+          particle.trail.push([nextPixel[0], nextPixel[1]])
+          if (particle.trail.length > 5) particle.trail.shift()
           if (particle.longitude < particleBounds.west || particle.longitude > particleBounds.east || particle.latitude < particleBounds.south || particle.latitude > particleBounds.north) {
             particle.trail = []
             particle.longitude = particleBounds.west + Math.random() * (particleBounds.east - particleBounds.west)
             particle.latitude = particleBounds.south + Math.random() * (particleBounds.north - particleBounds.south)
             continue
           }
-          if (particle.trail.length > 1) lineFeatures.push({
-            type: 'Feature' as const,
-            geometry: { type: 'LineString' as const, coordinates: particle.trail },
-            properties: { speedKmh: particle.speedKmh },
-          })
-          headFeatures.push({
-            type: 'Feature' as const,
-            geometry: { type: 'Point' as const, coordinates: [particle.longitude, particle.latitude] },
-            properties: { speedKmh: particle.speedKmh, directionTo: vector.directionTo },
-          })
+          if (particle.trail.length < 2) continue
+          context.beginPath()
+          context.moveTo(particle.trail[0][0], particle.trail[0][1])
+          for (let index = 1; index < particle.trail.length; index += 1) context.lineTo(particle.trail[index][0], particle.trail[index][1])
+          context.lineCap = 'round'
+          context.lineJoin = 'round'
+          context.globalAlpha = 0.72
+          context.strokeStyle = '#08242f'
+          context.lineWidth = 3.2
+          context.stroke()
+          context.globalAlpha = 0.96
+          context.strokeStyle = '#f7ffff'
+          context.lineWidth = 1.25 + Math.min(vector.speedKmh / 70, 0.65)
+          context.stroke()
+          context.globalAlpha = 0.92
+          context.fillStyle = '#ffffff'
+          context.beginPath()
+          context.arc(nextPixel[0], nextPixel[1], 1.25, 0, Math.PI * 2)
+          context.fill()
         }
-        ;(instance.getSource('wind-flow-trails') as GeoJSONSource).setData({ type: 'FeatureCollection', features: lineFeatures } as GeoJSON.FeatureCollection)
-        ;(instance.getSource('wind-flow-heads') as GeoJSONSource).setData({ type: 'FeatureCollection', features: headFeatures } as GeoJSON.FeatureCollection)
+        context.globalAlpha = 1
       }, animationInterval)
     }
+    instance.on('movestart', clearTrails)
+    instance.on('rotatestart', clearTrails)
+    instance.on('pitchstart', clearTrails)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         if (timer) clearInterval(timer)
         timer = null
+        clearTrails()
       } else updateWind()
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     removeLoadListener = whenMapStyleReady(instance, updateWind)
-    return () => { if (timer) clearInterval(timer); removeLoadListener(); document.removeEventListener('visibilitychange', handleVisibilityChange) }
+    return () => {
+      if (timer) clearInterval(timer)
+      instance.off('movestart', clearTrails)
+      instance.off('rotatestart', clearTrails)
+      instance.off('pitchstart', clearTrails)
+      removeLoadListener()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      clearTrails()
+    }
   }, [windNodes, windTime, windVisible, reducedMotion, windCanvasSize.width, windCanvasSize.height])
 
   useEffect(() => {
@@ -962,6 +954,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
   const peakWindSpeed = windVectors.length ? Math.max(...windVectors.map((vector) => vector.speedKmh)) : null
   return <div className={`map-frame ${terrainEnabled ? 'terrain-active' : 'terrain-flat'}`}>
     <div ref={element} className="map-canvas" aria-label="Map centered on the selected Alberta area" />
+    <canvas ref={windFlowCanvas} className="wind-flow-canvas" aria-hidden="true" />
     <div className="map-coordinates"><Compass size={13} /> {lat.toFixed(3)}° N · {Math.abs(lon).toFixed(3)}° W</div>
     {direction !== undefined && !windVisible && <div className="map-wind" style={{ transform: `rotate(${direction}deg)` }} aria-label={`Wind blows toward ${windDirectionLabel(direction)}`}><Wind size={24} /></div>}
     <div className="map-field-badge"><span className={windVisible && windNodes.length ? 'field-live-dot' : ''} />{windVisible ? `${windNodes.length || '—'}-point wind field` : 'Wind field hidden'} · {terrainEnabled ? '3D relief' : '2D'}</div>
@@ -982,7 +975,11 @@ function DashboardBottom({ observations, observationState, source, days, forecas
     if (day) byDay.set(day, (byDay.get(day) ?? 0) + 1)
   }
   const daily = [...byDay.entries()].sort(([left], [right]) => left.localeCompare(right))
-  const publicFeedIncomplete = accessMode === 'public-nrt-canada-csv' && sourceDateRange !== null && queryRange !== null && sourceDateRange.maxDate < queryRange.end
+  const publicFeedIncomplete = accessMode === 'public-nrt-canada-csv' && sourceDateRange !== null && queryRange !== null
+    && (sourceDateRange.minDate > queryRange.start || sourceDateRange.maxDate < queryRange.end)
+  const publicFeedWindowNote = publicFeedIncomplete && sourceDateRange && queryRange
+    ? `The public feed window is ${sourceDateRange.minDate} through ${sourceDateRange.maxDate}; requested dates outside it have unknown status.`
+    : null
   const dailyCountUnknown = observationState === 'ready' && observations.length === 0 && (accessMode === 'local-validated-archive' || publicFeedIncomplete)
   const maxDaily = Math.max(1, ...daily.map(([, count]) => count))
   const windValues = forecast.slice(0, 24).map((hour) => hour.windSpeed)
@@ -992,10 +989,10 @@ function DashboardBottom({ observations, observationState, source, days, forecas
   return <div className="dashboard-bottom">
     <section className="dashboard-chart-card detection-trend-card" aria-label="Satellite detection counts by day">
       <div className="dashboard-chart-heading"><div><b>Observed detections</b><small>{source.replaceAll('_', ' ')} · last {days} UTC {days === 1 ? 'day' : 'days'}</small></div><span>{observationState === 'ready' && !dailyCountUnknown ? `${observations.length.toLocaleString()} total` : observationState === 'ready' ? '—' : observationState === 'loading' ? 'Loading' : 'Not loaded'}</span></div>
-      {observationState === 'ready' && publicFeedIncomplete && <small className="compare-trend-empty">Feed rows are present through {sourceDateRange?.maxDate}; later requested dates have unknown status.</small>}
+      {observationState === 'ready' && publicFeedWindowNote && <small className="compare-trend-empty">{publicFeedWindowNote}</small>}
       {observationState === 'ready' && daily.length > 0
         ? <div className="daily-bars">{daily.map(([day, count]) => <div className="daily-bar-column" key={day} title={`${day} UTC · ${count.toLocaleString()} observations`}><b>{count.toLocaleString()}</b><i style={{ height: `${Math.max(4, (count / maxDaily) * 43)}px` }} /><small>{new Date(`${day}T00:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric' })}</small></div>)}</div>
-        : <div className="dashboard-chart-empty">{observationState === 'ready' ? accessMode === 'local-validated-archive' ? 'No imported rows fall in this window. Archive coverage is unknown.' : publicFeedIncomplete ? `No rows were returned through ${sourceDateRange?.maxDate}; later requested dates are unknown.` : 'NASA returned no dated detections for this product and window. This is not proof of no fire.' : observationState === 'error' ? 'The selected FIRMS observation window is unavailable.' : 'Load FIRMS observations to build this chart from returned acquisition dates.'}{observationState !== 'loading' && <button className="text-button" onClick={onLoad}>{observationState === 'error' ? 'Retry observations' : 'Load observations'}</button>}</div>}
+        : <div className="dashboard-chart-empty">{observationState === 'ready' ? accessMode === 'local-validated-archive' ? 'No imported rows fall in this window. Archive coverage is unknown.' : publicFeedIncomplete ? publicFeedWindowNote : 'NASA returned no dated detections for this product and window. This is not proof of no fire.' : observationState === 'error' ? 'The selected FIRMS observation window is unavailable.' : 'Load FIRMS observations to build this chart from returned acquisition dates.'}{observationState !== 'loading' && <button className="text-button" onClick={onLoad}>{observationState === 'error' ? 'Retry observations' : 'Load observations'}</button>}</div>}
     </section>
     <section className="dashboard-chart-card wind-outlook-card" aria-label="Forecast wind speed for the next 24 hours">
       <div className="dashboard-chart-heading"><div><b>Wind outlook · next 24 hours</b><small>Open-Meteo · hourly at 10 m · km/h</small></div><strong>{forecast[0] ? `${Math.round(forecast[0].windSpeed)} km/h` : '—'}</strong></div>
@@ -1034,11 +1031,13 @@ function CompareTrend({ feed, tone }: { feed: CompareFeed; tone: 'modis' | 'viir
       ? requestedDays.filter((day) => day >= feed.sourceDateRange!.minDate && day <= feed.sourceDateRange!.maxDate)
       : requestedDays
   const maximum = Math.max(1, ...days.map((day) => byDay.get(day) ?? 0))
+  const publicWindowIncomplete = feed.accessMode === 'public-nrt-canada-csv' && feed.sourceDateRange !== null && feed.queryRange !== null
+    && (feed.sourceDateRange.minDate > feed.queryRange.start || feed.sourceDateRange.maxDate < feed.queryRange.end)
   return <section className={`compare-trend-card ${tone}`}>
-    <header><div><b>{feed.source.replaceAll('_', ' ')}</b><small>{firmsAccessLabel(feed.accessMode)} · returned observations · requested UTC days</small>{feed.accessMode === 'local-validated-archive' && <small>{feed.archiveImports.map((item) => item.sourceFile).join(', ') || 'Local import provenance unavailable'}</small>}</div><strong>{feed.state === 'ready' && !(feed.observations.length === 0 && (feed.accessMode === 'local-validated-archive' || (feed.accessMode === 'public-nrt-canada-csv' && feed.sourceDateRange && feed.queryRange && feed.sourceDateRange.maxDate < feed.queryRange.end))) ? feed.observations.length.toLocaleString() : '—'}</strong></header>
-    {feed.state === 'ready' && feed.accessMode === 'local-validated-archive' && days.length === 0 ? <div className="compare-trend-empty">No imported rows fall in this window. Archive coverage remains unknown.</div> : feed.state === 'ready' && feed.accessMode === 'public-nrt-canada-csv' && feed.sourceDateRange && days.length === 0 ? <div className="compare-trend-empty">The feed has no rows in this requested window; dates after {feed.sourceDateRange.maxDate} remain unknown.</div> : feed.state === 'ready' ? <>
+    <header><div><b>{feed.source.replaceAll('_', ' ')}</b><small>{firmsAccessLabel(feed.accessMode)} · returned observations · requested UTC days</small>{feed.accessMode === 'local-validated-archive' && <small>{feed.archiveImports.map((item) => item.sourceFile).join(', ') || 'Local import provenance unavailable'}</small>}</div><strong>{feed.state === 'ready' && !(feed.observations.length === 0 && (feed.accessMode === 'local-validated-archive' || publicWindowIncomplete)) ? feed.observations.length.toLocaleString() : '—'}</strong></header>
+    {feed.state === 'ready' && feed.accessMode === 'local-validated-archive' && days.length === 0 ? <div className="compare-trend-empty">No imported rows fall in this window. Archive coverage remains unknown.</div> : feed.state === 'ready' && feed.accessMode === 'public-nrt-canada-csv' && feed.sourceDateRange && days.length === 0 ? <div className="compare-trend-empty">No detections were returned in this requested window. Dates outside the rolling public feed window have unknown status.</div> : feed.state === 'ready' ? <>
       {feed.accessMode === 'local-validated-archive' && <small className="compare-trend-empty">Only dates with imported rows are shown; other dates remain unknown.</small>}
-      {feed.accessMode === 'public-nrt-canada-csv' && feed.sourceDateRange && feed.queryRange && feed.sourceDateRange.maxDate < feed.queryRange.end && <small className="compare-trend-empty">The public feed has rows through {feed.sourceDateRange.maxDate}; later requested dates have unknown status.</small>}
+      {publicWindowIncomplete && feed.sourceDateRange && <small className="compare-trend-empty">The public feed window is {feed.sourceDateRange.minDate} through {feed.sourceDateRange.maxDate}; requested dates outside it have unknown status.</small>}
       <div className="compare-trend-bars" aria-label={`Daily records for ${feed.source}`}>{days.map((day) => {
       const count = byDay.get(day) ?? 0
       return <div key={day} title={`${day} UTC · ${count.toLocaleString()} returned records`}><b>{count.toLocaleString()}</b><i style={{ height: `${count ? Math.max(4, count / maximum * 42) : 3}px` }} /><small>{new Date(`${day}T00:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric' })}</small></div>
@@ -1069,7 +1068,7 @@ function shiftUtcMonth(month: string, offset: number) {
   return date.toISOString().slice(0, 7)
 }
 
-function CalendarBoard({ observations, observationState, days, selectedDate, onSelectDate, windowStart, windowEnd, coverageUnknown, unknownAfterDate }: { observations: FireObservation[]; observationState: 'idle' | 'loading' | 'ready' | 'error'; days: number; selectedDate: string; onSelectDate: (date: string) => void; windowStart: string; windowEnd: string; coverageUnknown: boolean; unknownAfterDate: string | null }) {
+function CalendarBoard({ observations, observationState, days, selectedDate, onSelectDate, windowStart, windowEnd, coverageUnknown, unknownBeforeDate, unknownAfterDate }: { observations: FireObservation[]; observationState: 'idle' | 'loading' | 'ready' | 'error'; days: number; selectedDate: string; onSelectDate: (date: string) => void; windowStart: string; windowEnd: string; coverageUnknown: boolean; unknownBeforeDate: string | null; unknownAfterDate: string | null }) {
   const counts = new globalThis.Map<string, number>()
   for (const observation of observations) {
     const day = observation.acquiredAtUtc?.slice(0, 10)
@@ -1091,9 +1090,11 @@ function CalendarBoard({ observations, observationState, days, selectedDate, onS
     const count = counts.get(iso)
     const future = iso > todayUtc
     const rowCoverageUnknown = coverageUnknown && !count
+    const feedDateBeforeWindow = unknownBeforeDate !== null && iso < unknownBeforeDate
     const feedDateUnknown = unknownAfterDate !== null && iso > unknownAfterDate
-    const state = future ? 'future-date' : !hasQueryWindow ? 'not-loaded' : observationState === 'ready' && inQuery && (rowCoverageUnknown || feedDateUnknown) ? 'unknown-coverage' : observationState === 'ready' && inQuery ? 'covered' : observationState === 'loading' && inQuery ? 'loading' : observationState === 'error' && inQuery ? 'error' : inQuery ? 'not-loaded' : 'outside-window'
-    const label = future ? 'Future dates are unavailable' : state === 'covered' ? `${count ?? 0} returned observations` : state === 'unknown-coverage' ? feedDateUnknown ? 'No public feed rows yet; date status is unknown' : 'No archive rows; observation coverage is unknown' : state === 'loading' ? 'Request in progress' : state === 'error' ? 'Request unavailable' : state === 'not-loaded' ? 'Not queried' : 'Outside selected FIRMS window'
+    const feedDateOutsideWindow = feedDateBeforeWindow || feedDateUnknown
+    const state = future ? 'future-date' : !hasQueryWindow ? 'not-loaded' : observationState === 'ready' && inQuery && (rowCoverageUnknown || feedDateOutsideWindow) ? 'unknown-coverage' : observationState === 'ready' && inQuery ? 'covered' : observationState === 'loading' && inQuery ? 'loading' : observationState === 'error' && inQuery ? 'error' : inQuery ? 'not-loaded' : 'outside-window'
+    const label = future ? 'Future dates are unavailable' : state === 'covered' ? `${count ?? 0} returned observations` : state === 'unknown-coverage' ? feedDateBeforeWindow ? 'Before the public feed window; status unknown' : feedDateUnknown ? 'After the public feed window; status unknown' : 'No archive rows; observation coverage is unknown' : state === 'loading' ? 'Request in progress' : state === 'error' ? 'Request unavailable' : state === 'not-loaded' ? 'Not queried' : 'Outside selected FIRMS window'
     return { iso, date, count, inQuery, state, label }
   })
   const weekStart = mondayOfUtcWeek(selectedDate)
@@ -1105,22 +1106,22 @@ function CalendarBoard({ observations, observationState, days, selectedDate, onS
   return <section className="calendar-board" aria-label="FIRMS observation calendar">
     <header className="calendar-board-heading"><div><CalendarDays size={17} /><div><b>Activity Calendar — {monthDate.toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'long', year: 'numeric' })}</b><small>{observationState === 'ready' ? `Observed records · ${days} UTC ${days === 1 ? 'day' : 'days'} · ${windowStart} to ${windowEnd}` : observationState === 'loading' ? 'Loading the selected NASA FIRMS window' : observationState === 'error' ? 'Selected FIRMS window is unavailable' : 'Load observations to populate queried dates'}</small></div></div><div className="calendar-board-actions"><div className="calendar-month-nav"><button aria-label="Previous month" title="Previous month" onClick={() => setMonth((value) => shiftUtcMonth(value, -1))}><ChevronLeft size={13} /></button><button aria-label="Next month" title="Next month" onClick={() => setMonth((value) => shiftUtcMonth(value, 1))}><ChevronRight size={13} /></button></div><div className="calendar-mode-toggle"><button className={mode === 'month' ? 'selected' : ''} onClick={() => setMode('month')} aria-pressed={mode === 'month'}>Month</button><button className={mode === 'week' ? 'selected' : ''} onClick={() => setMode('week')} aria-pressed={mode === 'week'}>Week</button></div></div></header>
     <div className="calendar-grid-wrap"><div className="calendar-weekdays">{weekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}</div><div className={`calendar-grid ${mode === 'week' ? 'week-mode' : ''}`}>{rendered.map((cell) => <button key={cell.iso} className={`calendar-day ${cell.iso === selectedDate ? 'selected' : ''} ${cell.iso.slice(0, 7) !== month ? 'adjacent-month' : ''} ${cell.state} ${cell.state === 'covered' && (cell.count ?? 0) === 0 ? 'zero-records' : ''}`} onClick={() => onSelectDate(cell.iso)} disabled={cell.state === 'future-date'} title={`${cell.iso} UTC · ${cell.label}`} aria-label={`${cell.iso}, ${cell.label}`} aria-pressed={cell.iso === selectedDate}><span>{cell.date.getUTCDate()}</span>{cell.state === 'covered' ? <b style={{ '--activity': String((cell.count ?? 0) / maximum) } as CSSProperties}>{(cell.count ?? 0).toLocaleString()}</b> : cell.state === 'loading' ? <i className="calendar-loading-dot" /> : <small>{cell.state === 'outside-window' ? '—' : cell.state === 'error' ? '!' : cell.state === 'unknown-coverage' ? '?' : '·'}</small>}</button>)}</div></div>
-    <aside className="calendar-legend"><span><i className="calendar-legend-count" /> Dates with returned rows</span>{!coverageUnknown && !unknownAfterDate && <span><i className="calendar-legend-empty" /> Queried, no records</span>}{(coverageUnknown || unknownAfterDate) && <span><i className="calendar-legend-unknown" /> {coverageUnknown ? 'No archive rows · coverage unknown' : 'Dates past feed records · status unknown'}</span>}<span><i className="calendar-legend-unknown" /> Not queried / unavailable</span></aside>
+    <aside className="calendar-legend"><span><i className="calendar-legend-count" /> Dates with returned rows</span>{!coverageUnknown && !unknownBeforeDate && !unknownAfterDate && <span><i className="calendar-legend-empty" /> Queried, no records</span>}{(coverageUnknown || unknownBeforeDate || unknownAfterDate) && <span><i className="calendar-legend-unknown" /> {coverageUnknown ? 'No archive rows · coverage unknown' : 'Dates outside public feed window · status unknown'}</span>}<span><i className="calendar-legend-unknown" /> Not queried / unavailable</span></aside>
   </section>
 }
 
-function CalendarWeekDetails({ selectedDate, observations, observationState, days, source, windowStart, windowEnd, coverageUnknown, unknownAfterDate }: { selectedDate: string; observations: FireObservation[]; observationState: 'idle' | 'loading' | 'ready' | 'error'; days: number; source: string; windowStart: string; windowEnd: string; coverageUnknown: boolean; unknownAfterDate: string | null }) {
+function CalendarWeekDetails({ selectedDate, observations, observationState, days, source, windowStart, windowEnd, coverageUnknown, unknownBeforeDate, unknownAfterDate }: { selectedDate: string; observations: FireObservation[]; observationState: 'idle' | 'loading' | 'ready' | 'error'; days: number; source: string; windowStart: string; windowEnd: string; coverageUnknown: boolean; unknownBeforeDate: string | null; unknownAfterDate: string | null }) {
   const weekStart = mondayOfUtcWeek(selectedDate)
   const weekDays = Array.from({ length: 7 }, (_, index) => shiftUtcDay(weekStart, index))
   const inWindow = weekDays.filter((day) => day >= windowStart && day <= windowEnd)
   const counts = weekDays.map((day) => {
     const count = observations.filter((observation) => observation.acquiredAtUtc?.slice(0, 10) === day).length
-    const publicFeedDateUnknown = unknownAfterDate !== null && day > unknownAfterDate
+    const publicFeedDateUnknown = (unknownBeforeDate !== null && day < unknownBeforeDate) || (unknownAfterDate !== null && day > unknownAfterDate)
     return { day, count, queried: observationState === 'ready' && day >= windowStart && day <= windowEnd && (!coverageUnknown || count > 0) && !publicFeedDateUnknown }
   })
   const weekObservations = observations.filter((observation) => observation.acquiredAtUtc && observation.acquiredAtUtc.slice(0, 10) >= weekStart && observation.acquiredAtUtc.slice(0, 10) < shiftUtcDay(weekStart, 7))
-  const weekHasUnknownTail = unknownAfterDate !== null && inWindow.some((day) => day > unknownAfterDate)
-  const weekRowsUnknown = observationState === 'ready' && inWindow.length > 0 && weekObservations.length === 0 && (coverageUnknown || weekHasUnknownTail)
+  const weekHasUnknownFeedDates = (unknownBeforeDate !== null && inWindow.some((day) => day < unknownBeforeDate)) || (unknownAfterDate !== null && inWindow.some((day) => day > unknownAfterDate))
+  const weekRowsUnknown = observationState === 'ready' && inWindow.length > 0 && weekObservations.length === 0 && (coverageUnknown || weekHasUnknownFeedDates)
   const max = Math.max(1, ...counts.filter((item) => item.queried).map((item) => item.count))
   const end = shiftUtcDay(weekStart, 6)
   const peak = weekObservations.reduce<FireObservation | null>((current, item) => item.frpMw !== null && (current === null || item.frpMw > (current.frpMw ?? -Infinity)) ? item : current, null)
@@ -1128,8 +1129,8 @@ function CalendarWeekDetails({ selectedDate, observations, observationState, day
 
   return <>
     <div className="panel-heading"><div><h2>Selected week details</h2><p>{format(weekStart)} – {format(end)}, {end.slice(0, 4)} · {source.replaceAll('_', ' ')}</p></div><CalendarDays size={18} /></div>
-    <div className="calendar-week-total"><span>{observationState === 'ready' && inWindow.length && !weekRowsUnknown ? weekObservations.length.toLocaleString() : '—'}</span><div><b>{weekRowsUnknown ? 'No returned rows' : observationState === 'ready' && inWindow.length ? 'Returned observations' : observationState === 'loading' && inWindow.length ? 'Loading requested days' : 'No queried week data'}</b><small>{weekRowsUnknown ? coverageUnknown ? 'Archive coverage is unknown for this week.' : `The public feed ends ${unknownAfterDate}; later requested dates remain unknown.` : observationState === 'ready' ? `${inWindow.length} of 7 dates fall inside the selected ${days}-day FIRMS request${coverageUnknown ? '; dates without imported rows remain unknown' : ''}` : observationState === 'loading' ? `Querying ${windowStart} to ${windowEnd}` : observationState === 'error' && windowStart ? `Request ${windowStart} to ${windowEnd} failed; no observation count is available` : 'No FIRMS date window has been queried for this week.'}</small></div></div>
-    {observationState === 'ready' && inWindow.length > 0 ? <div className="calendar-week-chart" aria-label={coverageUnknown || unknownAfterDate ? 'Daily FIRMS rows; dates without source rows have unknown coverage' : 'Returned FIRMS observations per day'}>{counts.map(({ day, count, queried }) => <div className="calendar-week-bar" key={day} title={`${day} UTC · ${queried ? `${count} records returned` : coverageUnknown && day >= windowStart && day <= windowEnd ? 'No imported row; coverage unknown' : unknownAfterDate && day > unknownAfterDate ? 'No public feed row yet; status unknown' : 'not queried'}`}><b>{queried ? count.toLocaleString() : '—'}</b><i className={queried && count > 0 ? 'has-count' : ''} style={{ height: `${queried && count ? Math.max(4, (count / max) * 56) : 3}px` }} /><small>{format(day).split(' ')[1]}</small></div>)}</div> : <div className="calendar-detail-empty">{observationState === 'error' ? 'NASA FIRMS could not provide this observation window.' : observationState === 'loading' ? 'The requested observations are loading.' : observationState === 'ready' ? 'No dates in this week were covered by the selected query.' : 'Load the selected product from Dashboard or Live Map; dates without a request remain unknown.'}</div>}
+    <div className="calendar-week-total"><span>{observationState === 'ready' && inWindow.length && !weekRowsUnknown ? weekObservations.length.toLocaleString() : '—'}</span><div><b>{weekRowsUnknown ? 'No returned rows' : observationState === 'ready' && inWindow.length ? 'Returned observations' : observationState === 'loading' && inWindow.length ? 'Loading requested days' : 'No queried week data'}</b><small>{weekRowsUnknown ? coverageUnknown ? 'Archive coverage is unknown for this week.' : 'Some dates in this week fall outside the public feed window; their status is unknown.' : observationState === 'ready' ? `${inWindow.length} of 7 dates fall inside the selected ${days}-day FIRMS request${coverageUnknown ? '; dates without imported rows remain unknown' : ''}` : observationState === 'loading' ? `Querying ${windowStart} to ${windowEnd}` : observationState === 'error' && windowStart ? `Request ${windowStart} to ${windowEnd} failed; no observation count is available` : 'No FIRMS date window has been queried for this week.'}</small></div></div>
+    {observationState === 'ready' && inWindow.length > 0 ? <div className="calendar-week-chart" aria-label={coverageUnknown || unknownBeforeDate || unknownAfterDate ? 'Daily FIRMS rows; dates outside the public feed window have unknown status' : 'Returned FIRMS observations per day'}>{counts.map(({ day, count, queried }) => <div className="calendar-week-bar" key={day} title={`${day} UTC · ${queried ? `${count} records returned` : coverageUnknown && day >= windowStart && day <= windowEnd ? 'No imported row; coverage unknown' : (unknownBeforeDate && day < unknownBeforeDate) || (unknownAfterDate && day > unknownAfterDate) ? 'Outside public feed window; status unknown' : 'not queried'}`}><b>{queried ? count.toLocaleString() : '—'}</b><i className={queried && count > 0 ? 'has-count' : ''} style={{ height: `${queried && count ? Math.max(4, (count / max) * 56) : 3}px` }} /><small>{format(day).split(' ')[1]}</small></div>)}</div> : <div className="calendar-detail-empty">{observationState === 'error' ? 'NASA FIRMS could not provide this observation window.' : observationState === 'loading' ? 'The requested observations are loading.' : observationState === 'ready' ? 'No dates in this week were covered by the selected query.' : 'Load the selected product from Dashboard or Live Map; dates without a request remain unknown.'}</div>}
     {peak && <div className="calendar-peak"><Flame size={15} /><span>Highest FRP in this week</span><b>{peak.frpMw} MW</b><small>{peak.acquiredAtUtc ? new Date(peak.acquiredAtUtc).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'time unavailable'}</small></div>}
     <div className="calendar-coverage-note"><AlertTriangle size={14} /><span>Coverage percentage and confidence are not supplied as week-level aggregates by this request. Zero returned records is not proof of no fire.</span></div>
   </>
@@ -1250,11 +1251,14 @@ export function App() {
   const calendarWindowStart = firms.queryRange?.start ?? (firms.state === 'ready' ? shiftUtcDay(calendarWindowEnd, 1 - firms.days) : '')
   const calendarSelectedDate = calendarDate ?? (calendarWindowEnd || queryEndDate || currentUtcDate)
   const archiveCoverageUnknown = firms.accessMode === 'local-validated-archive'
+  const unknownBeforeDate = firms.accessMode === 'public-nrt-canada-csv' && firms.sourceDateRange && firms.queryRange && firms.sourceDateRange.minDate > firms.queryRange.start ? firms.sourceDateRange.minDate : null
   const unknownAfterDate = firms.accessMode === 'public-nrt-canada-csv' && firms.sourceDateRange && firms.queryRange && firms.sourceDateRange.maxDate < firms.queryRange.end ? firms.sourceDateRange.maxDate : null
+  const selectedDateBeforeFeed = unknownBeforeDate !== null && calendarSelectedDate < unknownBeforeDate
+  const selectedDateAfterFeed = unknownAfterDate !== null && calendarSelectedDate > unknownAfterDate
   const calendarSelectedRecords = firms.observations.filter((observation) => observation.acquiredAtUtc?.slice(0, 10) === calendarSelectedDate)
   const calendarDateQueried = firms.state === 'ready' && calendarSelectedDate >= calendarWindowStart && calendarSelectedDate <= calendarWindowEnd
-  const calendarDateUnknown = calendarDateQueried && ((archiveCoverageUnknown && calendarSelectedRecords.length === 0) || (unknownAfterDate !== null && calendarSelectedDate > unknownAfterDate))
-  const dashboardRowsUnknown = firms.state === 'ready' && firms.observations.length === 0 && (archiveCoverageUnknown || unknownAfterDate !== null)
+  const calendarDateUnknown = calendarDateQueried && ((archiveCoverageUnknown && calendarSelectedRecords.length === 0) || selectedDateBeforeFeed || selectedDateAfterFeed)
+  const dashboardRowsUnknown = firms.state === 'ready' && firms.observations.length === 0 && (archiveCoverageUnknown || unknownBeforeDate !== null || unknownAfterDate !== null)
   const compareObservations = [...compareA.observations, ...compareB.observations]
   const liveFeeds = [liveModis, liveNoaa20, liveNoaa21]
   const liveSelectedFeeds = [...new Set(liveSensors.map((key) => key === 'modis-terra' || key === 'modis-aqua' ? 'MODIS_NRT' : key === 'noaa20' ? 'VIIRS_NOAA20_NRT' : 'VIIRS_NOAA21_NRT'))].map((source) => liveFeeds.find((feed) => feed.source === source)!).filter(Boolean)
@@ -1376,7 +1380,7 @@ export function App() {
     <p className="module-hint">Wind shading shows forecast speed and animated streamlines show forecast direction. Neither is a fire-spread prediction.</p>
   </section> : <FieldReports location={location} wind={weather ? { speedKmh: weather.windSpeed, directionTo: windDirectionLabel(directionTo ?? 0), validAtUtc: weather.time } : null} />
   const isFieldMobile = active === 'Field Situation' && isMobileViewport
-  const moduleBody = active === 'Dashboard' ? dashboardPanel : active === 'Calendar' ? <CalendarWeekDetails selectedDate={calendarSelectedDate} observations={firms.observations} observationState={firms.state} days={firms.days} source={firms.source} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} coverageUnknown={archiveCoverageUnknown} unknownAfterDate={unknownAfterDate} /> : active === 'Live Map' ? null : active === 'Compare' ? <>
+  const moduleBody = active === 'Dashboard' ? dashboardPanel : active === 'Calendar' ? <CalendarWeekDetails selectedDate={calendarSelectedDate} observations={firms.observations} observationState={firms.state} days={firms.days} source={firms.source} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} coverageUnknown={archiveCoverageUnknown} unknownBeforeDate={unknownBeforeDate} unknownAfterDate={unknownAfterDate} /> : active === 'Live Map' ? null : active === 'Compare' ? <>
     <div className="panel-heading"><div><h2>Sensor comparison</h2><p>MODIS and VIIRS stay separate</p></div><Layers3 size={18} /></div>
     <p className="compare-intro">Both products use the same map extent and UTC request window. Load them separately to preserve their source identity.</p>
     <div className="compare-source-control modis"><label htmlFor="compare-source-a"><span>Sensor A · MODIS</span><select id="compare-source-a" value={compareSourceA} onChange={(event) => setCompareSourceA(event.target.value as FirmsProduct)}>{firmsSources.filter((item) => item.id.startsWith('MODIS')).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><div><span className={`compare-state-dot ${compareA.state}`} />{compareA.state === 'ready' ? `${compareA.observations.length.toLocaleString()} records · ${compareA.fetchedAt ? new Date(compareA.fetchedAt).toISOString().slice(11, 16) + ' UTC' : 'loaded'}` : compareA.state === 'error' ? 'Request unavailable' : compareA.state === 'loading' ? 'Requesting NASA FIRMS…' : compareA.configured === false ? 'Server key not configured' : 'Not loaded'}</div><button className="primary-action" onClick={() => void compareA.load()} disabled={compareA.state === 'loading'}>{compareA.state === 'loading' ? <><span className="spinner" /> Loading MODIS…</> : <><RefreshCw size={13} /> {compareA.state === 'error' ? 'Retry MODIS' : 'Load MODIS product'}</>}</button></div>
@@ -1469,14 +1473,14 @@ export function App() {
             <button className="dashboard-load-button" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Loading observations</> : <><RefreshCw size={13} /> {firms.state === 'error' ? 'Retry observations' : firms.state === 'ready' ? 'Refresh observations' : 'Load observations'}</>}</button>
             {firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · {firmsAccessLabel(firms.accessMode)}{firms.accessMode === 'local-validated-archive' ? ` · ${firms.archiveImports.map((item) => item.sourceFile).join(', ') || 'import provenance unavailable'}` : ''}</small>}
           </section>}
-          {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false && !firms.publicFeedAvailable ? 'KEY NOT SET' : firms.publicFeedAvailable && !firms.configured ? 'PUBLIC FEED' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried && !calendarDateUnknown ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateUnknown ? unknownAfterDate !== null && calendarSelectedDate > unknownAfterDate ? 'Feed has no rows for this date yet' : 'No archive row found' : calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateUnknown ? unknownAfterDate !== null && calendarSelectedDate > unknownAfterDate ? `Public feed rows end ${unknownAfterDate}; this date is unknown.` : 'Archive coverage is unknown for this date.' : calendarDateQueried ? 'Not an incident count' : calendarWindowStart ? `${calendarWindowStart} → ${calendarWindowEnd}` : 'No query window loaded'}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load(calendarSelectedDate)}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the request window or beyond the available source rows has unknown status; missing archive rows do not imply zero activity.</small></section>}
+          {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false && !firms.publicFeedAvailable ? 'KEY NOT SET' : firms.publicFeedAvailable && !firms.configured ? 'PUBLIC FEED' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried && !calendarDateUnknown ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateUnknown ? selectedDateBeforeFeed ? 'Before public feed window' : selectedDateAfterFeed ? 'After public feed window' : 'Archive coverage unknown' : calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateUnknown ? selectedDateBeforeFeed ? `Public feed starts ${unknownBeforeDate}; this date is outside its window.` : selectedDateAfterFeed ? `Public feed ends ${unknownAfterDate}; this date is outside its window.` : 'Archive coverage is unknown for this date.' : calendarDateQueried ? 'Not an incident count' : calendarWindowStart ? `${calendarWindowStart} → ${calendarWindowEnd}` : 'No query window loaded'}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load(calendarSelectedDate)}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the request window or beyond the available source rows has unknown status; missing archive rows do not imply zero activity.</small></section>}
           {active === 'Terrain' && <section className="terrain-map-controls"><header><Mountain size={16} /><div><b>Terrain layers</b><small>Map & local analysis</small></div></header><button className="terrain-map-layer" onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>Elevation relief</span><b>{terrainEnabled ? '3D' : '2D'}</b></button><button className="terrain-map-layer" onClick={() => setTransectVisible((value) => !value)}><Activity size={15} /><span>Cross-section A—B</span><b>{transectVisible ? 'ON' : 'OFF'}</b></button><div className="terrain-map-layer static-layer"><Activity size={15} /><span>Local slope sample</span><b>{terrainAnalysis.state === 'ready' ? `${terrainAnalysis.slopeDegrees?.toFixed(1)}°` : terrainAnalysis.state.toUpperCase()}</b></div><div className="terrain-map-layer unavailable-layer"><Layers3 size={15} /><span>Land cover / fuels</span><b>NO SOURCE</b></div><div className="terrain-map-key"><i /> Cross-section · 80 km east–west</div></section>}
           <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={(active === 'Compare' ? compareObservations.length > 0 : active === 'Live Map' ? filteredLiveObservations.length > 0 : firms.state === 'ready' && visibleObservations.length > 0) ? 'fire-loaded' : ''} /> {active === 'Compare' ? `MODIS ${compareA.state === 'ready' ? compareA.observations.length : '—'} · VIIRS ${compareB.state === 'ready' ? compareB.observations.length : '—'} returned` : active === 'Live Map' ? liveFeedState === 'ready' ? `${visibleObservations.length} visible${selectedLiveDate ? ` · ${selectedLiveDate}` : ''} · clustered above zoom 9` : liveFeedState === 'loading' ? 'Requesting selected FIRMS sensors' : liveFeedState === 'error' ? 'Selected FIRMS sensors unavailable' : 'Load selected FIRMS sensors' : active === 'Calendar' ? calendarDateUnknown ? `Coverage unknown · ${calendarSelectedDate}` : calendarDateQueried ? `${visibleObservations.length} returned on ${calendarSelectedDate}` : firms.state === 'loading' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Requesting ${calendarSelectedDate}` : firms.state === 'error' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Request failed · ${calendarSelectedDate}` : 'Selected date not queried' : firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
         </div>
 
         <aside className={`inspector ${isFieldMobile ? 'field-mobile-inspector' : ''}`}>{isFieldMobile ? fieldMobilePanel : active === 'Live Map' ? liveInspector : moduleBody}</aside>
 
-        {active === 'Dashboard' ? <DashboardBottom observations={firms.observations} observationState={firms.state} source={firms.source} days={firms.days} forecast={hours.slice(safeIndex, safeIndex + 24)} accessMode={firms.accessMode} sourceDateRange={firms.sourceDateRange} queryRange={firms.queryRange} onLoad={() => void firms.load()} /> : active === 'Calendar' ? <CalendarBoard observations={firms.observations} observationState={firms.state} days={firms.days} selectedDate={calendarSelectedDate} onSelectDate={selectCalendarDate} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} coverageUnknown={archiveCoverageUnknown} unknownAfterDate={unknownAfterDate} /> : active === 'Compare' ? <CompareBottom modis={compareA} viirs={compareB} /> : active === 'Terrain' ? <TerrainCrossSection analysis={terrainAnalysis} /> : active === 'Live Map' ? <div className="live-activity-strip"><div className="live-timeline-title"><span><Activity size={16} /></span><div><b>Observation timeline</b><small>{liveActivityDays.length ? `${liveActivityDays.length} UTC dates with returned records` : 'No acquisition dates returned'} · row counts, not fire counts</small></div></div><div className="live-timeline-controls"><button className="timeline-control" onClick={() => { setLivePlaybackRunning(false); setSelectedLiveDate(null) }} aria-label="Show all returned dates" title="Show all returned dates"><Layers3 size={14} /></button><button className="timeline-control play-control" onClick={() => setLivePlaybackRunning((value) => !value)} disabled={liveActivityDays.length < 2} aria-label={livePlaybackRunning ? 'Pause date playback' : 'Play dates with returned records'} title={livePlaybackRunning ? 'Pause' : 'Play available dates'}>{livePlaybackRunning ? <Pause size={14} /> : <Play size={14} />}</button></div><div className="live-timeline-days" aria-label="Dates with returned observations">{liveActivityDays.length ? liveActivityDays.map(([date, count]) => <button key={date} className={`live-timeline-day ${selectedLiveDate === date ? 'selected' : ''}`} onClick={() => { setLivePlaybackRunning(false); setSelectedLiveDate(selectedLiveDate === date ? null : date) }} aria-pressed={selectedLiveDate === date} title={`${date} UTC · ${count.toLocaleString()} rows returned`}><b>{count.toLocaleString()}</b><i style={{ height: `${Math.max(7, count / liveActivityMax * 30)}px` }} /><small>{date.slice(5)}</small></button>) : <span className="live-timeline-empty">Load sources to see their actual acquisition dates. Dates without returned rows are omitted, not shown as zero.</span>}</div><button className={`live-all-dates ${selectedLiveDate === null ? 'active' : ''}`} onClick={() => { setLivePlaybackRunning(false); setSelectedLiveDate(null) }} aria-pressed={selectedLiveDate === null}>All dates</button></div> : <div className="bottom-strip"><div className="timeline-title"><Activity size={16} /><div><b>Weather timeline</b><small>Hourly forecast · wind, rain, temperature</small></div></div><div className="timeline-track forecast-track" aria-label="Hourly forecast selector">{visibleHours.map((hour, index) => { const absoluteIndex = forecastStartIndex + index; return <button key={hour.time} className={`forecast-tick ${absoluteIndex === safeIndex ? 'selected' : ''}`} style={{ height: `${Math.max(12, Math.min(34, 10 + hour.windSpeed * 0.28))}px` }} onClick={() => setSelectedTime(hour.time)} title={`${new Date(hour.time).toISOString().slice(0, 16).replace('T', ' ')} UTC · wind ${Math.round(hour.windSpeed)} km/h · rain ${hour.precipitation.toFixed(1)} mm`} aria-label={`Select ${hour.time} UTC, wind ${Math.round(hour.windSpeed)} kilometers per hour`} /> })}{!hours.length && <span className="timeline-empty">Hourly forecast unavailable</span>}</div><div className="timeline-select"><label htmlFor="forecast-time">{weather ? new Date(weather.time).toISOString().slice(11, 16) + ' UTC' : '—'}</label><input id="forecast-time" type="range" min={forecastStartIndex} max={Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1)} value={Math.min(Math.max(safeIndex, forecastStartIndex), Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1))} onChange={(event) => setSelectedTime(hours[Number(event.target.value)]?.time ?? null)} disabled={!hours.length} aria-label="Select forecast hour" /></div></div>}
+        {active === 'Dashboard' ? <DashboardBottom observations={firms.observations} observationState={firms.state} source={firms.source} days={firms.days} forecast={hours.slice(safeIndex, safeIndex + 24)} accessMode={firms.accessMode} sourceDateRange={firms.sourceDateRange} queryRange={firms.queryRange} onLoad={() => void firms.load()} /> : active === 'Calendar' ? <CalendarBoard observations={firms.observations} observationState={firms.state} days={firms.days} selectedDate={calendarSelectedDate} onSelectDate={selectCalendarDate} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} coverageUnknown={archiveCoverageUnknown} unknownBeforeDate={unknownBeforeDate} unknownAfterDate={unknownAfterDate} /> : active === 'Compare' ? <CompareBottom modis={compareA} viirs={compareB} /> : active === 'Terrain' ? <TerrainCrossSection analysis={terrainAnalysis} /> : active === 'Live Map' ? <div className="live-activity-strip"><div className="live-timeline-title"><span><Activity size={16} /></span><div><b>Observation timeline</b><small>{liveActivityDays.length ? `${liveActivityDays.length} UTC dates with returned records` : 'No acquisition dates returned'} · row counts, not fire counts</small></div></div><div className="live-timeline-controls"><button className="timeline-control" onClick={() => { setLivePlaybackRunning(false); setSelectedLiveDate(null) }} aria-label="Show all returned dates" title="Show all returned dates"><Layers3 size={14} /></button><button className="timeline-control play-control" onClick={() => setLivePlaybackRunning((value) => !value)} disabled={liveActivityDays.length < 2} aria-label={livePlaybackRunning ? 'Pause date playback' : 'Play dates with returned records'} title={livePlaybackRunning ? 'Pause' : 'Play available dates'}>{livePlaybackRunning ? <Pause size={14} /> : <Play size={14} />}</button></div><div className="live-timeline-days" aria-label="Dates with returned observations">{liveActivityDays.length ? liveActivityDays.map(([date, count]) => <button key={date} className={`live-timeline-day ${selectedLiveDate === date ? 'selected' : ''}`} onClick={() => { setLivePlaybackRunning(false); setSelectedLiveDate(selectedLiveDate === date ? null : date) }} aria-pressed={selectedLiveDate === date} title={`${date} UTC · ${count.toLocaleString()} rows returned`}><b>{count.toLocaleString()}</b><i style={{ height: `${Math.max(7, count / liveActivityMax * 30)}px` }} /><small>{date.slice(5)}</small></button>) : <span className="live-timeline-empty">Load sources to see their actual acquisition dates. Dates without returned rows are omitted, not shown as zero.</span>}</div><button className={`live-all-dates ${selectedLiveDate === null ? 'active' : ''}`} onClick={() => { setLivePlaybackRunning(false); setSelectedLiveDate(null) }} aria-pressed={selectedLiveDate === null}>All dates</button></div> : <div className="bottom-strip"><div className="timeline-title"><Activity size={16} /><div><b>Weather timeline</b><small>Hourly forecast · wind, rain, temperature</small></div></div><div className="timeline-track forecast-track" aria-label="Hourly forecast selector">{visibleHours.map((hour, index) => { const absoluteIndex = forecastStartIndex + index; return <button key={hour.time} className={`forecast-tick ${absoluteIndex === safeIndex ? 'selected' : ''}`} style={{ height: `${Math.max(12, Math.min(34, 10 + hour.windSpeed * 0.28))}px` }} onClick={() => setSelectedTime(hour.time)} title={`${new Date(hour.time).toISOString().slice(0, 16).replace('T', ' ')} UTC · wind ${Math.round(hour.windSpeed)} km/h · rain ${hour.precipitation.toFixed(1)} mm`} aria-label={`Select ${hour.time} UTC, wind ${Math.round(hour.windSpeed)} kilometers per hour`} /> })}{!hours.length && <span className="timeline-empty">Hourly forecast unavailable</span>}</div><div className="timeline-select"><label htmlFor="forecast-time">{weather ? new Date(weather.time).toISOString().slice(11, 16) + ' UTC' : '—'}</label><input id="forecast-time" type="range" min={forecastStartIndex} max={Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1)} value={Math.min(Math.max(safeIndex, forecastStartIndex), Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1))} onChange={(event) => setSelectedTime(hours[Number(event.target.value)]?.time ?? null)} disabled={!hours.length} aria-label="Select forecast hour" /></div></div>}
       </section>
       {isFieldMobile && <nav className="field-mobile-tabs" aria-label="Field situation sections">{(['Map', 'Updates', 'Layers', 'Report'] as const).map((tab) => {
         const Icon = tab === 'Map' ? Map : tab === 'Updates' ? Satellite : tab === 'Layers' ? Layers3 : ClipboardList
