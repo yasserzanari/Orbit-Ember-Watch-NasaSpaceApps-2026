@@ -22,6 +22,8 @@ export type WorkspaceState = {
   selectedTime: string | null
   selectedDate: string | null
   firmsProduct: FirmsProduct
+  compareProductA: FirmsProduct
+  compareProductB: FirmsProduct
   firmsDays: FirmsDayRange
   windVisible: boolean
   terrainEnabled: boolean
@@ -42,6 +44,8 @@ function readWorkspaceState(): WorkspaceState {
   const timestamp = params.get('time')
   const dateParam = params.get('date')
   const productParam = params.get('product') as FirmsProduct | null
+  const compareAParam = params.get('compareA') as FirmsProduct | null
+  const compareBParam = params.get('compareB') as FirmsProduct | null
   const daysParam = Number(params.get('days')) as FirmsDayRange
   const includesTimezone = timestamp ? /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) : false
   const date = timestamp ? new Date(includesTimezone ? timestamp : `${timestamp}Z`) : null
@@ -59,6 +63,8 @@ function readWorkspaceState(): WorkspaceState {
     selectedTime,
     selectedDate,
     firmsProduct: productParam && firmsProducts.includes(productParam) ? productParam : firmsProducts[0],
+    compareProductA: compareAParam && firmsProducts.includes(compareAParam) && compareAParam.startsWith('MODIS') ? compareAParam : 'MODIS_NRT',
+    compareProductB: compareBParam && firmsProducts.includes(compareBParam) && compareBParam.startsWith('VIIRS') ? compareBParam : 'VIIRS_NOAA20_NRT',
     firmsDays: firmsDayRanges.includes(daysParam) ? daysParam : 1,
     windVisible: params.get('wind') !== '0',
     terrainEnabled: params.get('terrain') !== '0',
@@ -76,6 +82,8 @@ function writeWorkspaceState(state: WorkspaceState) {
   if (state.selectedDate) url.searchParams.set('date', state.selectedDate)
   else url.searchParams.delete('date')
   url.searchParams.set('product', state.firmsProduct)
+  url.searchParams.set('compareA', state.compareProductA)
+  url.searchParams.set('compareB', state.compareProductB)
   url.searchParams.set('days', String(state.firmsDays))
   url.searchParams.set('wind', state.windVisible ? '1' : '0')
   url.searchParams.set('terrain', state.terrainEnabled ? '1' : '0')
@@ -98,6 +106,8 @@ export function useWorkspaceState() {
   const setSelectedTime = useCallback((selectedTime: string | null) => setState((current) => ({ ...current, selectedTime })), [])
   const setSelectedDate = useCallback((selectedDate: string | null) => setState((current) => ({ ...current, selectedDate })), [])
   const setFirmsProduct = useCallback((firmsProduct: FirmsProduct) => setState((current) => ({ ...current, firmsProduct })), [])
+  const setCompareProductA = useCallback((compareProductA: FirmsProduct) => setState((current) => ({ ...current, compareProductA })), [])
+  const setCompareProductB = useCallback((compareProductB: FirmsProduct) => setState((current) => ({ ...current, compareProductB })), [])
   const setFirmsDays = useCallback((firmsDays: FirmsDayRange) => setState((current) => ({ ...current, firmsDays })), [])
   const setWindVisible = useCallback((windVisible: boolean | ((current: boolean) => boolean)) => setState((current) => ({
     ...current,
@@ -110,6 +120,6 @@ export function useWorkspaceState() {
 
   return {
     ...state,
-    setView, setLocation, setSelectedTime, setSelectedDate, setFirmsProduct, setFirmsDays, setWindVisible, setTerrainEnabled,
+    setView, setLocation, setSelectedTime, setSelectedDate, setFirmsProduct, setCompareProductA, setCompareProductB, setFirmsDays, setWindVisible, setTerrainEnabled,
   }
 }
