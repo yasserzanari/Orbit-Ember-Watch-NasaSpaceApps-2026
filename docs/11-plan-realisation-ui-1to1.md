@@ -161,3 +161,9 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Le panneau d’activité de la zone a été élargi sur desktop, son verre dépoli et son liseré renforcés, et les chiffres, conditions météo et provenance ont gagné en lisibilité. Le bouton de chargement possède une cible tactile plus grande; l’état sans clé est annoncé comme « Setup needed » et reste accompagné de son explication d’accès aux données.
 - Les dimensions et la densité se réadaptent aux tablettes et mobiles sans déplacer les commandes de carte.
 - Vérification : `npm run build` réussi; `git diff --check` propre. Une nouvelle capture n’a pas été effectuée dans cette tranche.
+
+## Avancement — composition de Compare
+
+- Les sélecteurs produits et actions de chargement MODIS/VIIRS sont réunis dans un dock vitré flottant au-dessus de la carte. Le panneau latéral garde les compteurs, les dates communes et la réserve sur la non-évaluation de l’accord; les séries quotidiennes restent sous la carte.
+- Le dock et les cartes de tendances reprennent les surfaces glassy et les accents de capteur du reste de l’application. Sur mobile, les deux commandes passent côte à côte au-dessus de la carte.
+- Vérification : `npm run build` réussi; `git diff --check` propre. La revue visuelle navigateur reste à effectuer lorsque Chrome démarre sans erreur GPU.

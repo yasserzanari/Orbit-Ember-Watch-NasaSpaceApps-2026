@@ -967,3 +967,74 @@
 .cwfis-terms-confirm input { accent-color: #45c9c2; }
 .cwfis-terms-confirm a { margin-left: auto; color: #8ee0db; }
 @media(max-width:760px) { .cwfis-terms-confirm a { margin-left: 25px; } }
+
+/* Compare: keep sensor setup on the map, leaving the inspector for results. */
+.compare-workspace { grid-template-columns: minmax(0,1fr) 330px; }
+.compare-control-dock {
+  position: absolute;
+  z-index: 10;
+  top: 12px;
+  left: 12px;
+  display: grid;
+  width: 258px;
+  max-height: calc(100% - 82px);
+  gap: 9px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid rgba(177,230,235,.34);
+  border-radius: 13px;
+  background: radial-gradient(ellipse at 0 0,rgba(37,210,216,.12),transparent 52%),linear-gradient(145deg,rgba(14,32,43,.91),rgba(5,16,25,.86));
+  box-shadow: 0 20px 50px rgba(0,0,0,.42),0 0 26px rgba(37,210,216,.07),inset 0 1px 0 rgba(245,255,255,.16);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  scrollbar-color: #39535f transparent;
+  scrollbar-width: thin;
+}
+.compare-control-dock>header { display: flex; min-width: 0; align-items: center; gap: 9px; padding: 2px 1px 5px; }
+.compare-dock-icon { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border: 1px solid rgba(37,210,216,.23); border-radius: 9px; background: rgba(37,210,216,.1); color: #78e2df; }
+.compare-control-dock>header>div { display: grid; gap: 3px; }
+.compare-control-dock>header b { color: #e6f0f2; font-size: 12px; font-weight: 600; }
+.compare-control-dock>header small { color: #a2bac1; font-size: 9px; }
+.compare-control-dock .compare-source-control { gap: 7px; margin: 0; padding: 9px; border-color: rgba(174,215,220,.16); border-radius: 10px; background: linear-gradient(145deg,rgba(22,43,55,.72),rgba(6,19,28,.62)); box-shadow: inset 0 1px 0 rgba(240,255,255,.06); }
+.compare-control-dock .compare-source-control.modis { border-left: 2px solid #38d2d7; }
+.compare-control-dock .compare-source-control.viirs { border-left: 2px solid #f4b12f; }
+.compare-control-dock .compare-source-control label { gap: 6px; color: #d4e2e5; font-size: 9px; }
+.compare-control-dock .compare-source-control label>span { display: flex; align-items: center; gap: 6px; }
+.compare-control-dock .compare-source-control label>span>i { width: 7px; height: 7px; border-radius: 50%; background: #38d2d7; }
+.compare-control-dock .compare-source-control.viirs label>span>i { background: #f4b12f; }
+.compare-control-dock .compare-source-control select { padding: 8px; border-color: rgba(161,202,209,.24); border-radius: 7px; background: rgba(5,17,26,.76); color: #e4eef0; font-size: 10px; }
+.compare-control-dock .compare-source-control>div { min-height: 16px; color: #b4c6cb; font-size: 9px; }
+.compare-control-dock .compare-source-control .primary-action { min-height: 36px; border-color: rgba(37,210,216,.32); border-radius: 8px; background: rgba(37,210,216,.1); color: #9af0eb; font-size: 10px; font-weight: 600; }
+.compare-control-dock .compare-source-control.viirs .primary-action { border-color: rgba(244,177,47,.3); background: rgba(244,177,47,.085); color: #f3d38e; }
+.compare-control-dock>p { margin: 0; padding: 2px 3px 0; color: #9bb1b8; font-size: 9px; line-height: 1.45; }
+.compare-workspace .inspector { border-color: rgba(167,220,226,.24); background: rgba(9,22,32,.78); -webkit-backdrop-filter: blur(22px) saturate(145%); backdrop-filter: blur(22px) saturate(145%); }
+.compare-workspace .compare-intro { color: #b2c4c9; font-size: 10px; line-height: 1.5; }
+.compare-workspace .compare-metric-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+.compare-workspace .compare-metric-grid>div { min-height: 66px; align-content: center; padding: 10px; border-color: rgba(167,220,226,.18); border-radius: 9px; background: linear-gradient(145deg,rgba(27,49,61,.68),rgba(8,21,30,.58)); box-shadow: inset 0 1px 0 rgba(238,251,252,.055); }
+.compare-workspace .compare-metric-grid>div:last-child { grid-column: 1/-1; min-height: 58px; }
+.compare-workspace .compare-metric-grid span { color: #b0c4c9; font-size: 9px; }
+.compare-workspace .compare-metric-grid b { color: #e7f0f2; font-size: 19px; }
+.compare-workspace .compare-validation { border-color: rgba(244,177,47,.2); border-radius: 9px; background: linear-gradient(120deg,rgba(94,68,27,.22),rgba(16,27,32,.36)); color: #e0d1a9; }
+.compare-workspace .compare-validation b { font-size: 10px; }
+.compare-workspace .compare-validation p { font-size: 9px; line-height: 1.5; }
+.compare-workspace .compare-trend-card { padding: 10px 12px; border-color: rgba(167,220,226,.18); border-radius: 11px; background: linear-gradient(145deg,rgba(17,35,46,.84),rgba(7,19,28,.82)); box-shadow: inset 0 1px 0 rgba(238,251,252,.07); }
+.compare-workspace .compare-bottom>aside { align-items: center; border-color: rgba(244,177,47,.2); border-radius: 11px; background: linear-gradient(145deg,rgba(75,57,28,.35),rgba(11,24,31,.72)); color: #cfc39e; font-size: 9px; }
+@media (max-width: 1100px) and (min-width: 761px) {
+  .compare-workspace { grid-template-columns: minmax(0,1fr) 276px; }
+  .compare-control-dock { width: 226px; padding: 10px; gap: 7px; }
+  .compare-control-dock .compare-source-control { padding: 8px; }
+}
+@media (max-width: 760px) {
+  .compare-workspace { grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto auto; }
+  .compare-workspace .map-column { min-height: 54dvh; }
+  .compare-workspace .inspector { max-height: 36dvh; overflow: auto; }
+  .compare-control-dock { top: 8px; right: 8px; left: 8px; width: auto; max-height: min(34dvh,260px); grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; }
+  .compare-control-dock>header { grid-column: 1/-1; padding: 0 1px; }
+  .compare-control-dock .compare-source-control { align-content: start; gap: 5px; padding: 7px; }
+  .compare-control-dock .compare-source-control label { gap: 4px; font-size: 8px; }
+  .compare-control-dock .compare-source-control select { padding: 6px; font-size: 8px; }
+  .compare-control-dock .compare-source-control>div { font-size: 7px; }
+  .compare-control-dock .compare-source-control .primary-action { min-height: 30px; font-size: 8px; }
+  .compare-control-dock>p { display: none; }
+  .compare-workspace .compare-bottom { grid-template-columns: minmax(0,1fr); }
+}
