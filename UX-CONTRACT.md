@@ -11,6 +11,7 @@ The application communicates satellite thermal detections, weather observations/
 - AOI, date window, selected platforms, processing branch and selected time bin are app-level state; route changes preserve them. Shareable selections are serializable in URL parameters.
 - A selected observation or time bin stays linked across map, chart, calendar and inspector.
 - Mobile navigation uses a dismissible drawer; detail panels become accessible bottom sheets.
+- Data & Sources may query NASA FIRMS `data_availability` through the server proxy; show returned product date ranges with a retrieval timestamp, explain that dates do not prove coverage for an AOI, and preserve unknown/key-missing/error states.
 
 ## Canonical controls
 

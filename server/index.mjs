@@ -11,8 +11,10 @@ const allowedSources = new Set([
   'MODIS_NRT', 'MODIS_SP',
   'VIIRS_NOAA20_NRT', 'VIIRS_NOAA20_SP',
   'VIIRS_NOAA21_NRT', 'VIIRS_NOAA21_SP',
+  'VIIRS_SNPP_NRT', 'VIIRS_SNPP_SP',
 ])
 const cache = new Map()
+let availabilityCache = null
 
 function loadLocalEnv() {
   try {
@@ -167,6 +169,42 @@ async function getFirms(requestUrl, response) {
   }
 }
 
+async function getFirmsAvailability(response) {
+  const key = process.env.FIRMS_MAP_KEY
+  if (!key) return json(response, 503, { code: 'firms_key_missing', message: 'Configure FIRMS_MAP_KEY in the local server environment.' })
+  if (availabilityCache && availabilityCache.expiresAt > Date.now()) {
+    return json(response, 200, availabilityCache.payload, { 'x-data-cache': 'hit' })
+  }
+
+  const url = `https://firms.modaps.eosdis.nasa.gov/api/data_availability/csv/${encodeURIComponent(key)}/all`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20_000)
+  try {
+    const upstream = await fetch(url, { signal: controller.signal, headers: { accept: 'text/csv' } })
+    if (!upstream.ok) return json(response, 502, { code: 'firms_availability_upstream_error', message: `NASA FIRMS returned HTTP ${upstream.status} while checking product coverage.` })
+    const csv = await upstream.text()
+    if (Buffer.byteLength(csv) > 256 * 1024) return json(response, 502, { code: 'firms_availability_too_large', message: 'FIRMS availability response exceeded the configured response limit.' })
+    const rows = parseCsv(csv)
+    if (!rows.length || !['data_id', 'min_date', 'max_date'].every((column) => column in rows[0])) {
+      return json(response, 502, { code: 'firms_availability_invalid_csv', message: 'NASA FIRMS returned an availability file without the expected columns.' })
+    }
+    const products = rows.flatMap((row) => {
+      const minDate = validateUtcDate(row.min_date)
+      const maxDate = validateUtcDate(row.max_date)
+      if (!allowedSources.has(row.data_id) || !minDate || !maxDate || minDate > maxDate) return []
+      return [{ product: row.data_id, minDate, maxDate }]
+    })
+    const payload = { fetchedAtUtc: new Date().toISOString(), products }
+    availabilityCache = { expiresAt: Date.now() + 60 * 60_000, payload }
+    return json(response, 200, payload, { 'x-data-cache': 'miss' })
+  } catch (error) {
+    const timeoutError = error?.name === 'AbortError'
+    return json(response, 502, { code: timeoutError ? 'firms_availability_timeout' : 'firms_availability_network_error', message: timeoutError ? 'NASA FIRMS availability did not answer before the 20 second timeout.' : 'Could not reach NASA FIRMS availability. Retry when the connection is available.' })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 const mimeTypes = new Map([
   ['.html', 'text/html; charset=utf-8'], ['.js', 'text/javascript; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'], ['.json', 'application/json; charset=utf-8'],
@@ -206,6 +244,10 @@ const server = createServer(async (request, response) => {
   if (url.pathname === '/api/firms') {
     if (request.method !== 'GET') return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET' })
     return getFirms(url, response)
+  }
+  if (url.pathname === '/api/firms/availability') {
+    if (request.method !== 'GET') return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET' })
+    return getFirmsAvailability(response)
   }
   if (url.pathname.startsWith('/api/')) return json(response, 404, { code: 'not_found' })
   if (!['GET', 'HEAD'].includes(request.method || '')) return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET, HEAD' })

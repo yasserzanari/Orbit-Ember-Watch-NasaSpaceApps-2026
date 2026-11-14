@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, ImageSource, Map as MapLibreMap } from 'maplibre-gl'
@@ -48,11 +48,46 @@ type FireObservation = {
 const firmsSources = [
   { id: 'VIIRS_NOAA20_NRT', label: 'VIIRS · NOAA-20 · near real-time' },
   { id: 'VIIRS_NOAA21_NRT', label: 'VIIRS · NOAA-21 · near real-time' },
+  { id: 'VIIRS_SNPP_NRT', label: 'VIIRS · Suomi-NPP · near real-time archive' },
   { id: 'MODIS_NRT', label: 'MODIS · near real-time' },
   { id: 'VIIRS_NOAA20_SP', label: 'VIIRS · NOAA-20 · standard processing' },
   { id: 'VIIRS_NOAA21_SP', label: 'VIIRS · NOAA-21 · standard processing' },
+  { id: 'VIIRS_SNPP_SP', label: 'VIIRS · Suomi-NPP · standard archive' },
   { id: 'MODIS_SP', label: 'MODIS · standard processing' },
 ]
+
+type FirmsCoverage = { product: string; minDate: string; maxDate: string }
+type FirmsCoverageState = { status: 'idle' | 'loading' | 'ready' | 'error' | 'key-missing'; products: FirmsCoverage[]; fetchedAtUtc: string | null; message: string }
+
+function useFirmsCoverage(enabled: boolean) {
+  const [coverage, setCoverage] = useState<FirmsCoverageState>({ status: 'idle', products: [], fetchedAtUtc: null, message: '' })
+  const controllerRef = useRef<AbortController | null>(null)
+  const load = useCallback(async () => {
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    controllerRef.current = controller
+    setCoverage((current) => ({ ...current, status: 'loading', message: '' }))
+    try {
+      const response = await fetch('/api/firms/availability', { signal: controller.signal })
+      const payload = await response.json()
+      if (!response.ok) {
+        setCoverage((current) => ({ ...current, status: payload.code === 'firms_key_missing' ? 'key-missing' : 'error', message: payload.message || 'NASA FIRMS coverage could not be loaded.' }))
+        return
+      }
+      setCoverage({ status: 'ready', products: Array.isArray(payload.products) ? payload.products : [], fetchedAtUtc: payload.fetchedAtUtc ?? null, message: '' })
+    } catch (error) {
+      if (controller.signal.aborted) return
+      setCoverage((current) => ({ ...current, status: 'error', message: error instanceof Error ? error.message : 'NASA FIRMS coverage could not be loaded.' }))
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null
+    }
+  }, [])
+  useEffect(() => {
+    if (enabled && coverage.status === 'idle') void load()
+  }, [coverage.status, enabled, load])
+  useEffect(() => () => controllerRef.current?.abort(), [])
+  return { ...coverage, load }
+}
 
 function useFirms(lat: number, lon: number, source: string, days: number, selectedEndDate: string | null = null) {
   const [observations, setObservations] = useState<FireObservation[]>([])
@@ -539,7 +574,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         id: 'firms-hotspots', type: 'circle', source: 'firms-hotspots',
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['coalesce', ['get', 'frpMw'], 1], 0, 4, 10, 7, 100, 12],
-          'circle-color': ['match', ['get', 'source'], 'MODIS_NRT', '#25d2d8', 'MODIS_SP', '#25d2d8', 'VIIRS_NOAA20_NRT', '#f4b12f', 'VIIRS_NOAA20_SP', '#f4b12f', 'VIIRS_NOAA21_NRT', '#f2683b', 'VIIRS_NOAA21_SP', '#f2683b', '#f4b12f'],
+          'circle-color': ['match', ['get', 'source'], 'MODIS_NRT', '#25d2d8', 'MODIS_SP', '#25d2d8', 'VIIRS_NOAA20_NRT', '#f4b12f', 'VIIRS_NOAA20_SP', '#f4b12f', 'VIIRS_NOAA21_NRT', '#f2683b', 'VIIRS_NOAA21_SP', '#f2683b', 'VIIRS_SNPP_NRT', '#a88bfa', 'VIIRS_SNPP_SP', '#a88bfa', '#f4b12f'],
           'circle-opacity': 0.88,
           'circle-stroke-color': '#08141d',
           'circle-stroke-width': 1.25,
@@ -854,6 +889,7 @@ export function App() {
   const { hours, retrievedAt, state, retry } = useWeather(location.lat, location.lon)
   const windField = useWindField(location.lat, location.lon)
   const firms = useFirms(location.lat, location.lon, firmsProduct, firmsDays, selectedDate)
+  const firmsCoverage = useFirmsCoverage(active === 'Data & Sources')
   const compareA = useFirms(location.lat, location.lon, compareSourceA, firmsDays, selectedDate)
   const compareB = useFirms(location.lat, location.lon, compareSourceB, firmsDays, selectedDate)
   const terrainAnalysis = useTerrainAnalysis(location.lat, location.lon, active === 'Terrain', terrainRefresh)
@@ -959,7 +995,7 @@ export function App() {
     <div className="source-card"><div><Wind size={16} /><b>Open-Meteo wind grid</b><span className={windField.state === 'ready' ? 'source-live' : 'source-missing'}>{windField.state === 'ready' ? 'CONNECTED' : windField.state.toUpperCase()}</span></div><p>{windField.state === 'ready' ? `${windField.nodes.length} grid locations interpolate hourly wind speed and direction into the animated map field.` : 'A 5 × 5 hourly forecast grid drives the map wind field.'}</p><small>25 locations · UTC · selected timeline hour · direction-aware vector interpolation</small><a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">API documentation <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Mapzen Terrain Tiles · Terrarium</b><span className={terrainAnalysis.state === 'ready' ? 'source-live' : 'source-missing'}>{terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state.toUpperCase()}</span></div><p>Bare-earth elevation tiles drive the 3D relief and the selected-point slope/aspect and transect samples.</p><small>Terrarium RGB · Canadian source attribution: Open Government Licence — Canada. Land cover and fuel classes remain unconnected.</small><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Open-Meteo Elevation</b><span className={elevation.state === 'ready' ? 'source-live' : 'source-missing'}>{elevation.state === 'ready' ? 'CONNECTED' : elevation.state.toUpperCase()}</span></div><p>{elevation.state === 'ready' ? `Point elevation: ${Math.round(elevation.value)} m.` : 'Point elevation lookup for selected coordinates.'}</p><small>One coordinate sample · metres above sea level</small></div>
-    <div className="source-card source-disconnected"><div><Satellite size={16} /><b>NASA FIRMS</b><span className={firms.configured ? 'source-live' : 'source-missing'}>{firms.configured ? 'SERVER KEY SET' : 'KEY NOT SET'}</span></div><p>MODIS / VIIRS area requests run through the server-side proxy. The MAP_KEY is never sent to the browser.</p><small>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} normalized detections · ${firms.source}` : 'Product, area, response count and retrieval timestamp are retained per request.'}</small><a href="https://firms.modaps.eosdis.nasa.gov/api/area/" target="_blank" rel="noreferrer">FIRMS API documentation <ChevronRight size={12} /></a></div>
+    <div className="source-card source-disconnected"><div><Satellite size={16} /><b>NASA FIRMS · product coverage</b><span className={firmsCoverage.status === 'ready' ? 'source-live' : 'source-missing'}>{firmsCoverage.status === 'ready' ? `${firmsCoverage.products.length} PRODUCTS` : firmsCoverage.status === 'loading' ? 'CHECKING…' : firmsCoverage.status === 'key-missing' ? 'KEY NOT SET' : 'COVERAGE UNKNOWN'}</span></div><p>MODIS and VIIRS area requests run through the server-side proxy. The MAP_KEY is never sent to the browser. These date ranges describe product availability, not clear-sky coverage or guaranteed detections at this location.</p><button className="coverage-refresh" onClick={() => void firmsCoverage.load()} disabled={firmsCoverage.status === 'loading'}>{firmsCoverage.status === 'loading' ? <><span className="spinner" /> Checking product dates…</> : <><RefreshCw size={12} /> {firmsCoverage.status === 'ready' ? 'Refresh product coverage' : 'Check NASA product coverage'}</>}</button>{firmsCoverage.status === 'ready' ? <div className="firms-coverage-list">{firmsSources.map((item) => { const match = firmsCoverage.products.find((product) => product.product === item.id); return <div className="firms-coverage-row" key={item.id}><span>{item.label}</span><b>{match ? `${match.minDate} → ${match.maxDate}` : 'Not listed by FIRMS'}</b></div> })}{firmsCoverage.fetchedAtUtc && <small>Coverage retrieved {new Date(firmsCoverage.fetchedAtUtc).toISOString().slice(0, 16).replace('T', ' ')} UTC · cached for one hour</small>}</div> : <small>{firmsCoverage.status === 'key-missing' ? 'Set FIRMS_MAP_KEY in the server’s local .env file to query availability.' : firmsCoverage.status === 'error' ? firmsCoverage.message : 'Select Check NASA product coverage to query the current ranges reported by FIRMS.'}</small>}<small>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} normalized detections · ${firms.source}` : 'Coverage comes from NASA’s data_availability service; historical imports and per-location observation completeness are separate.'}</small><a href="https://firms.modaps.eosdis.nasa.gov/api/data_availability/" target="_blank" rel="noreferrer">FIRMS availability API <ChevronRight size={12} /></a></div>
   </> : active === 'Scenario' ? <>
     <div className="scenario-banner"><AlertTriangle size={16} /><div><b>SCENARIO ONLY</b><span>Not an operational forecast or instruction</span></div></div>
     <div className="panel-heading"><div><h2>Wind sensitivity</h2><p>Explore an input; no fire spread is computed</p></div><Flame size={18} /></div>

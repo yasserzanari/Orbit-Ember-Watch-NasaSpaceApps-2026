@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 export type WorkspaceLocation = { name: string; lat: number; lon: number }
 export type WorkspaceView = 'Dashboard' | 'Live Map' | 'Calendar' | 'Compare' | 'Terrain' | 'Data & Sources' | 'Scenario' | 'Field Situation'
-export type FirmsProduct = 'VIIRS_NOAA20_NRT' | 'VIIRS_NOAA21_NRT' | 'MODIS_NRT' | 'VIIRS_NOAA20_SP' | 'VIIRS_NOAA21_SP' | 'MODIS_SP'
+export type FirmsProduct = 'VIIRS_NOAA20_NRT' | 'VIIRS_NOAA21_NRT' | 'VIIRS_SNPP_NRT' | 'MODIS_NRT' | 'VIIRS_NOAA20_SP' | 'VIIRS_NOAA21_SP' | 'VIIRS_SNPP_SP' | 'MODIS_SP'
 export type FirmsDayRange = 1 | 2 | 3 | 5
 
 export const workspaceLocations: WorkspaceLocation[] = [
@@ -13,7 +13,7 @@ export const workspaceLocations: WorkspaceLocation[] = [
 ]
 
 const views: WorkspaceView[] = ['Dashboard', 'Live Map', 'Calendar', 'Compare', 'Terrain', 'Data & Sources', 'Scenario', 'Field Situation']
-const firmsProducts: FirmsProduct[] = ['VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'VIIRS_NOAA20_SP', 'VIIRS_NOAA21_SP', 'MODIS_SP']
+const firmsProducts: FirmsProduct[] = ['VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'VIIRS_SNPP_NRT', 'MODIS_NRT', 'VIIRS_NOAA20_SP', 'VIIRS_NOAA21_SP', 'VIIRS_SNPP_SP', 'MODIS_SP']
 const firmsDayRanges: FirmsDayRange[] = [1, 2, 3, 5]
 
 export type WorkspaceState = {
