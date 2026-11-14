@@ -24,6 +24,7 @@ type ForecastHour = Weather
 type WindSample = { time: string; speedKmh: number | null; directionFrom: number | null }
 type WindNode = { id: string; latitude: number; longitude: number; samples: WindSample[] }
 type WindFieldState = { state: 'loading' | 'ready' | 'error'; nodes: WindNode[]; retrievedAt: string | null; error?: string }
+type MapSyncGroup = { maps: Set<MapLibreMap>; syncing: boolean }
 type FireObservation = {
   id: string
   latitude: number
@@ -348,7 +349,7 @@ function ensureWindLayers(instance: MapLibreMap) {
   })
 }
 
-function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windVisible, terrainEnabled, onSelectPoint, onSelectObservation }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void }) {
+function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, syncGroup }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; syncGroup?: MapSyncGroup }) {
   const element = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const selectPoint = useRef(onSelectPoint)
@@ -422,8 +423,23 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       const lonLabel = `${Math.abs(pointLon).toFixed(3)}° ${pointLon >= 0 ? 'E' : 'W'}`
       selectPoint.current({ name: `Map point · ${latLabel} ${lonLabel}`, lat: pointLat, lon: pointLon })
     })
-    return () => { map.current?.remove(); map.current = null }
-  }, [])
+    const syncCamera = () => {
+      const current = map.current
+      if (!current || !syncGroup || syncGroup.syncing) return
+      syncGroup.syncing = true
+      const camera = { center: current.getCenter(), zoom: current.getZoom(), bearing: current.getBearing(), pitch: current.getPitch() }
+      for (const peer of syncGroup.maps) if (peer !== current) peer.jumpTo(camera)
+      syncGroup.syncing = false
+    }
+    if (syncGroup) {
+      syncGroup.maps.add(map.current)
+      map.current.on('move', syncCamera)
+    }
+    return () => {
+      if (map.current && syncGroup) { map.current.off('move', syncCamera); syncGroup.maps.delete(map.current) }
+      map.current?.remove(); map.current = null
+    }
+  }, [syncGroup])
 
   useEffect(() => {
     if (!map.current) return
@@ -707,8 +723,11 @@ export function App() {
   const [navOpen, setNavOpen] = useState(false)
   const [windOverride, setWindOverride] = useState<number | null>(null)
   const [horizon, setHorizon] = useState(6)
+  const [compareMode, setCompareMode] = useState<'swipe' | 'side-by-side'>('swipe')
+  const [compareSplit, setCompareSplit] = useState(50)
   const [elevation, setElevation] = useState<{ value: number; state: 'loading' | 'ready' | 'error' }>({ value: 0, state: 'loading' })
   const [activeDetection, setActiveDetection] = useState<FireObservation | null>(null)
+  const compareMapSync = useRef<MapSyncGroup>({ maps: new Set(), syncing: false })
   const { hours, retrievedAt, state, retry } = useWeather(location.lat, location.lon)
   const windField = useWindField(location.lat, location.lon)
   const firms = useFirms(location.lat, location.lon, firmsProduct, firmsDays)
@@ -828,7 +847,7 @@ export function App() {
     </aside>
     {navOpen && <button className="nav-backdrop" onClick={() => setNavOpen(false)} aria-label="Close navigation" />}
 
-    <main className="main-shell">
+    <main className={`main-shell ${active === 'Compare' ? 'compare-active' : ''}`}>
       <header className="topbar">
         <button className="mobile-menu" onClick={() => setNavOpen(true)} aria-label="Open navigation"><Menu size={20} /></button>
         <div className="page-heading"><h1>{moduleTitle}</h1><span>Alberta fire intelligence</span></div>
@@ -838,8 +857,13 @@ export function App() {
       <section className={`workspace ${active === 'Dashboard' ? 'dashboard-workspace' : active === 'Calendar' ? 'calendar-workspace' : active === 'Compare' ? 'compare-workspace' : ''}`}>
         <div className="map-column">
           <div className="map-toolbar"><div className="map-title"><span className="eyebrow-icon"><Map size={15} /></span><div><strong>{location.name}</strong><small>{active === 'Scenario' ? 'Hypothetical inputs · no spread perimeter available' : active === 'Compare' ? 'MODIS + VIIRS detections · shared area and UTC window' : `${windField.state === 'ready' ? `${windField.nodes.length} point live wind field` : 'Live wind field loading'} · click map to inspect a location`}</small></div></div><div className="map-actions"><button className="map-mode-button" aria-pressed={terrainEnabled} title={terrainEnabled ? 'Switch to flat 2D map' : 'Enable 3D terrain'} onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>{terrainEnabled ? '3D' : '2D'}</span></button><button className={`map-mode-button ${windVisible ? 'mode-active' : ''}`} aria-pressed={windVisible} title={windVisible ? 'Hide animated wind field' : 'Show animated wind field'} onClick={() => setWindVisible((value) => !value)}><Wind size={15} /><span>Wind</span></button><button className="icon-button" title="Search map" aria-label="Search map" onClick={() => document.querySelector<HTMLSelectElement>('.location-control select')?.focus()}><Search size={16} /></button><button className="icon-button" title="Map layers" aria-label="Map layers" onClick={() => setActive('Live Map')}><Layers3 size={16} /></button></div></div>
-          <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={setActiveDetection} />
-          {active === 'Compare' && <div className="compare-map-sources"><span className="compare-map-source modis"><i />{compareSourceA.replaceAll('_', ' ')}<b>{compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : compareA.state.toUpperCase()}</b></span><span className="compare-map-source viirs"><i />{compareSourceB.replaceAll('_', ' ')}<b>{compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : compareB.state.toUpperCase()}</b></span></div>}
+          {active === 'Compare' ? <div className={`compare-map-stage ${compareMode}`}>
+            <div className="compare-map-a"><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareA.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={setActiveDetection} syncGroup={compareMapSync.current} /></div>
+            <div className="compare-map-b" style={compareMode === 'swipe' ? { clipPath: `inset(0 0 0 ${compareSplit}%)` } : undefined}><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareB.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={setActiveDetection} syncGroup={compareMapSync.current} /></div>
+            <div className="compare-mode-control" role="group" aria-label="Comparison map layout"><button className={compareMode === 'swipe' ? 'selected' : ''} onClick={() => setCompareMode('swipe')} aria-pressed={compareMode === 'swipe'}>↔ Swipe</button><button className={compareMode === 'side-by-side' ? 'selected' : ''} onClick={() => setCompareMode('side-by-side')} aria-pressed={compareMode === 'side-by-side'}>▥ Side-by-side</button></div>
+            {compareMode === 'swipe' && <><div className="compare-swipe-divider" style={{ left: `${compareSplit}%` }} aria-hidden="true"><span>↔</span></div><input className="compare-swipe-input" type="range" min="15" max="85" value={compareSplit} onChange={(event) => setCompareSplit(Number(event.target.value))} aria-label="Adjust comparison divider" /></>}
+            <div className="compare-map-chip modis"><i />{compareSourceA.replaceAll('_', ' ')} · {compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : compareA.state.toUpperCase()}</div><div className="compare-map-chip viirs"><i />{compareSourceB.replaceAll('_', ' ')} · {compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : compareB.state.toUpperCase()}</div>
+          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={setActiveDetection} />}
           {active === 'Dashboard' && <section className="dashboard-map-summary" aria-label="Area activity summary"><div className="dashboard-map-kicker"><span>ALBERTA WILDFIRE SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'SOURCE LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false ? 'KEY NOT SET' : 'NOT LOADED'}</div><small>{location.name} · {firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</small><div className="dashboard-detection-count"><span>{firms.state === 'ready' ? firms.observations.length.toLocaleString() : '—'}</span><div><b>Observed detections</b><small>{firms.state === 'ready' ? 'Satellite thermal anomalies' : firms.state === 'loading' ? 'Request in progress' : 'Not confirmed fires'}</small></div></div><div className="dashboard-product-line"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div>{weather && <div className="dashboard-condition-row"><div><Wind size={14} /><span>Wind</span><b>{Math.round(weather.windSpeed)} km/h</b></div><div><CloudRain size={14} /><span>Rain</span><b>{weather.precipitation.toFixed(1)} mm</b></div></div>}{firms.configured === false && <small className="dashboard-key-note">Set FIRMS_MAP_KEY in the server’s local environment to load NASA observations.</small>}<button className="dashboard-load-button" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Loading observations</> : <><RefreshCw size={13} /> {firms.state === 'error' ? 'Retry satellite data' : 'Load satellite data'}</>}</button>{firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC</small>}</section>}
           {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false ? 'KEY NOT SET' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateQueried ? 'Not an incident count' : `${calendarWindowStart} → ${calendarWindowEnd}`}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load()}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the requested window is unknown, not a zero.</small></section>}
           <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={(active === 'Compare' ? compareObservations.length > 0 : firms.state === 'ready' && visibleObservations.length > 0) ? 'fire-loaded' : ''} /> {active === 'Compare' ? `MODIS ${compareA.state === 'ready' ? compareA.observations.length : '—'} · VIIRS ${compareB.state === 'ready' ? compareB.observations.length : '—'} returned` : active === 'Calendar' ? calendarDateQueried ? `${visibleObservations.length} returned on ${calendarSelectedDate}` : 'Selected date outside loaded window' : firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
