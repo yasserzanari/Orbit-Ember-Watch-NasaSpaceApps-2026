@@ -42,7 +42,7 @@ The application communicates satellite thermal detections, weather observations/
 
 Every source-bound view supports: loading, current result, no detections returned, unknown coverage, known valid observation without detection, unavailable product/date, stale cache, offline, request failure, partial data and malformed input. These states must never collapse to a zero count.
 
-Data values carry source, product/model version, native units, valid time, retrieval time, quality status and geographic resolution where available. Conversion of wind direction follows the source convention and is centralized in a tested adapter.
+Data values carry source, product/model version, native units, valid time, retrieval time, quality status and geographic resolution where available. Conversion of wind direction follows the source convention and is centralized in a tested adapter. The animated 5×5 wind grid follows the MapLibre camera footprint, including pitch, bearing and resize; API longitudes are normalized while render coordinates remain continuous at the antimeridian. Interpolation is visual context for the queried forecast points, not a higher-resolution measurement or fire-spread prediction.
 
 ## Scenario state model
 
@@ -69,4 +69,4 @@ Network/API errors retain useful prior content where possible, distinguish stale
 
 ## Verification expectations
 
-Behavior checks cover cross-route state continuity, wind from/to direction conversion, UTC/local rendering, source freshness and request races, offline labels, scenario input snapshot/reproducibility, mobile drawer/sheet keyboard access, and no-scroll desktop shell. Visual checks compare each implemented view against its approved mockup at desktop and phone sizes.
+Behavior checks cover cross-route state continuity, wind from/to direction conversion, UTC/local rendering, source freshness and request races, wind-grid coverage after resize and at extreme camera extents, antimeridian continuity, offline labels, scenario input snapshot/reproducibility, mobile drawer/sheet keyboard access, and no-scroll desktop shell. Visual checks compare each implemented view against its approved mockup at desktop and phone sizes.

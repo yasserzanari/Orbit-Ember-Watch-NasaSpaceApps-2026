@@ -29,7 +29,7 @@ type LiveSensorKey = 'modis-terra' | 'modis-aqua' | 'noaa20' | 'noaa21'
 type WindSample = { time: string; speedKmh: number | null; directionFrom: number | null }
 type WindNode = { id: string; latitude: number; longitude: number; samples: WindSample[] }
 type WindFieldState = { state: 'loading' | 'ready' | 'error'; nodes: WindNode[]; retrievedAt: string | null; error?: string }
-type WindViewport = { centerLatitude: number; centerLongitude: number; zoom: number; width: number; height: number }
+type WindViewport = { centerLatitude: number; centerLongitude: number; zoom: number; width: number; height: number; west: number; east: number; south: number; north: number }
 type MapSyncGroup = { maps: Set<MapLibreMap>; syncing: boolean }
 type FireObservation = {
   id: string
@@ -291,20 +291,62 @@ function normalizeLongitude(longitude: number) {
 function createWindGrid(lat: number, lon: number, viewport: WindViewport | null) {
   const centerLatitude = viewport?.centerLatitude ?? lat
   const centerLongitude = viewport?.centerLongitude ?? lon
-  const latitudeMetersPerDegree = Math.max(0.2, Math.cos(centerLatitude * Math.PI / 180))
-  const zoomScale = viewport ? 512 * 2 ** Math.min(18, Math.max(1, viewport.zoom)) : 512 * 2 ** 6.2
-  const halfLongitude = viewport ? Math.min(22, Math.max(0.12, viewport.width * 180 / zoomScale * 1.35)) : 0.8
-  const halfLatitude = viewport ? Math.min(12, Math.max(0.1, viewport.height * 180 / zoomScale * latitudeMetersPerDegree * 1.35)) : 0.65
-  return [-2, -1, 0, 1, 2].flatMap((stepLat) => [-2, -1, 0, 1, 2].map((stepLon) => ({
-    latitude: Math.max(-82, Math.min(82, centerLatitude + (stepLat / 2) * halfLatitude)),
-    longitude: normalizeLongitude(centerLongitude + (stepLon / 2) * halfLongitude),
-  })))
+  const maxMercatorLatitude = 85.05112878
+  const south = viewport?.south ?? centerLatitude - 0.65
+  const north = viewport?.north ?? centerLatitude + 0.65
+  let west = viewport?.west ?? centerLongitude - 0.8
+  let east = viewport?.east ?? centerLongitude + 0.8
+  const rawLongitudeSpan = Math.max(0.05, east - west)
+  const longitudeSpan = Math.min(360, rawLongitudeSpan * 1.08)
+  const latitudeSpan = Math.min(2 * maxMercatorLatitude, Math.max(0.05, north - south) * 1.08)
+  const middleLongitude = (west + east) / 2
+  const middleLatitude = (south + north) / 2
+  west = middleLongitude - longitudeSpan / 2
+  const gridSouth = Math.max(-maxMercatorLatitude, middleLatitude - latitudeSpan / 2)
+  const gridNorth = Math.min(maxMercatorLatitude, middleLatitude + latitudeSpan / 2)
+  return Array.from({ length: 5 }, (_, row) => Array.from({ length: 5 }, (_, column) => ({
+    latitude: gridSouth + (row / 4) * (gridNorth - gridSouth),
+    // Keep a continuous longitude for map rendering; normalize only for the API request.
+    longitude: west + (column / 4) * longitudeSpan,
+  }))).flat()
+}
+
+function cameraWindViewport(instance: MapLibreMap): WindViewport {
+  const center = instance.getCenter()
+  const canvas = instance.getCanvas()
+  const width = Math.max(1, canvas.clientWidth)
+  const height = Math.max(1, canvas.clientHeight)
+  const edgeSamples: [number, number][] = [
+    [0, 0], [width / 2, 0], [width, 0],
+    [width, height / 2], [width, height], [width / 2, height],
+    [0, height], [0, height / 2], [width / 2, height / 2],
+  ]
+  const visible = edgeSamples.map(([x, y]) => instance.unproject([x, y]))
+  const longitudes = visible.map((point) => unwrapLongitude(point.lng, center.lng))
+  const latitudes = visible.map((point) => point.lat)
+  const maxMercatorLatitude = 85.05112878
+  return {
+    centerLatitude: center.lat,
+    centerLongitude: center.lng,
+    zoom: instance.getZoom(),
+    width,
+    height,
+    west: Math.min(...longitudes),
+    east: Math.max(...longitudes),
+    south: Math.max(-maxMercatorLatitude, Math.min(...latitudes)),
+    north: Math.min(maxMercatorLatitude, Math.max(...latitudes)),
+  }
 }
 
 function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
   const [field, setField] = useState<WindFieldState>({ state: 'loading', nodes: [], retrievedAt: null })
   const gridSignature = viewport
-    ? [viewport.centerLatitude, viewport.centerLongitude].map((value) => Math.round(value * 4) / 4).concat([Math.round(viewport.zoom * 4) / 4, Math.round(viewport.width / 64) * 64, Math.round(viewport.height / 64) * 64]).join(',')
+    ? [viewport.south, viewport.west, viewport.north, viewport.east].map((value) => Math.round(value * 4) / 4).join(',')
+function unwrapLongitude(longitude: number, reference: number) {
+  const normalized = normalizeLongitude(longitude)
+  return normalized + 360 * Math.round((reference - normalized) / 360)
+}
+
     : `${Math.round(lat * 10) / 10},${Math.round(lon * 10) / 10}`
 
   useEffect(() => {
@@ -313,7 +355,7 @@ function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
       const coordinates = createWindGrid(lat, lon, viewport)
       const params = new URLSearchParams({
         latitude: coordinates.map((point) => point.latitude.toFixed(3)).join(','),
-        longitude: coordinates.map((point) => point.longitude.toFixed(3)).join(','),
+        longitude: coordinates.map((point) => normalizeLongitude(point.longitude).toFixed(3)).join(','),
         hourly: 'wind_speed_10m,wind_direction_10m',
         wind_speed_unit: 'kmh', timezone: 'UTC', forecast_days: '7', past_days: '1',
       })
@@ -336,7 +378,7 @@ function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
             return {
               id: `wind-${coordinates[index].latitude.toFixed(3)}-${coordinates[index].longitude.toFixed(3)}`,
               latitude: Number.isFinite(record.latitude) ? record.latitude! : coordinates[index].latitude,
-              longitude: Number.isFinite(record.longitude) ? normalizeLongitude(record.longitude!) : coordinates[index].longitude,
+              longitude: Number.isFinite(record.longitude) ? unwrapLongitude(record.longitude!, coordinates[index].longitude) : coordinates[index].longitude,
               samples: hourly.time.map((time, hourIndex) => ({
                 time,
                 speedKmh: Number.isFinite(hourly.wind_speed_10m![hourIndex]) ? hourly.wind_speed_10m![hourIndex] : null,
@@ -617,9 +659,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     const emitCameraBounds = () => {
       const current = map.current
       if (!current) return
-      const center = current.getCenter()
-      const canvas = current.getCanvas()
-      reportCamera.current({ centerLatitude: center.lat, centerLongitude: normalizeLongitude(center.lng), zoom: current.getZoom(), width: canvas.clientWidth, height: canvas.clientHeight })
+      reportCamera.current(cameraWindViewport(current))
     }
     map.current.on('moveend', emitCameraBounds)
     map.current.once('style.load', emitCameraBounds)
@@ -639,6 +679,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       const clusterFeature = map.current?.queryRenderedFeatures(event.point, { layers: ['firms-clusters'] })[0]
       const clusterId = Number(clusterFeature?.properties?.cluster_id)
       if (Number.isInteger(clusterId)) {
+    map.current.on('resize', emitCameraBounds)
         const source = map.current?.getSource('firms-hotspots') as GeoJSONSource | undefined
         source?.getClusterExpansionZoom(clusterId).then((zoom) => {
           if (!map.current) return
@@ -684,7 +725,10 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     let frame = 0
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => instance.resize())
+      frame = requestAnimationFrame(() => {
+        instance.resize()
+        reportCamera.current(cameraWindViewport(instance))
+      })
     })
     observer.observe(container)
     return () => { observer.disconnect(); cancelAnimationFrame(frame) }
@@ -1061,8 +1105,9 @@ export function App() {
   const [windViewport, setWindViewport] = useState<WindViewport | null>(null)
   const compareMapSync = useRef<MapSyncGroup>({ maps: new Set(), syncing: false })
   const updateWindViewport = useCallback((viewport: WindViewport) => {
-    const next = { centerLatitude: Math.round(viewport.centerLatitude * 4) / 4, centerLongitude: Math.round(viewport.centerLongitude * 4) / 4, zoom: Math.round(viewport.zoom * 4) / 4, width: Math.round(viewport.width / 64) * 64, height: Math.round(viewport.height / 64) * 64 }
-    setWindViewport((current) => current && current.centerLatitude === next.centerLatitude && current.centerLongitude === next.centerLongitude && current.zoom === next.zoom && current.width === next.width && current.height === next.height ? current : next)
+    const quantize = (value: number) => Math.round(value * 4) / 4
+    const next = { ...viewport, centerLatitude: quantize(viewport.centerLatitude), centerLongitude: quantize(viewport.centerLongitude), west: quantize(viewport.west), east: quantize(viewport.east), south: quantize(viewport.south), north: quantize(viewport.north), zoom: Math.round(viewport.zoom * 4) / 4, width: Math.round(viewport.width / 64) * 64, height: Math.round(viewport.height / 64) * 64 }
+    setWindViewport((current) => current && current.south === next.south && current.west === next.west && current.north === next.north && current.east === next.east ? current : next)
   }, [])
   useEffect(() => {
     const viewport = window.matchMedia('(max-width: 760px)')
