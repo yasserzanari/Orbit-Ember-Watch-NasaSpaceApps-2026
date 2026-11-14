@@ -14,7 +14,17 @@ const supportedProducts = new Set([
   'VIIRS_NOAA21_NRT', 'VIIRS_NOAA21_SP',
   'VIIRS_SNPP_NRT', 'VIIRS_SNPP_SP',
 ])
-const requiredColumns = ['latitude', 'longitude', 'acq_date', 'acq_time', 'satellite', 'instrument', 'frp', 'version']
+const satellitesByProduct = {
+  MODIS_NRT: new Set(['A', 'T']),
+  MODIS_SP: new Set(['A', 'T']),
+  VIIRS_NOAA20_NRT: new Set(['N20']),
+  VIIRS_NOAA20_SP: new Set(['N20']),
+  VIIRS_NOAA21_NRT: new Set(['N21']),
+  VIIRS_NOAA21_SP: new Set(['N21']),
+  VIIRS_SNPP_NRT: new Set(['NPP']),
+  VIIRS_SNPP_SP: new Set(['NPP']),
+}
+const requiredColumns = ['latitude', 'longitude', 'acq_date', 'acq_time', 'satellite', 'frp', 'version']
 const defaultMaxRows = 1_000_000
 
 function usage() {
@@ -27,6 +37,7 @@ Required:
 
 Options:
   --retrieved-at <UTC ISO>  Time the file was obtained; omitted means unknown
+  --source-url <URL>       NASA FIRMS source URL (official HTTPS host only)
   --expected-start <date>   Expected first UTC date (YYYY-MM-DD)
   --expected-end <date>     Expected last UTC date (YYYY-MM-DD)
   --archive-root <path>     Raw and normalized outputs (default: data/private/firms)
@@ -118,7 +129,7 @@ function csvRowObject(headers, values) {
   return Object.fromEntries(headers.map((header, index) => [header, (values[index] ?? '').trim()]))
 }
 
-function validateObservation(row) {
+function validateObservation(row, product) {
   if (!row.latitude) return { reason: 'invalid_latitude' }
   if (!row.longitude) return { reason: 'invalid_longitude' }
   if (!row.frp) return { reason: 'invalid_frp' }
@@ -136,13 +147,17 @@ function validateObservation(row) {
   if (hour > 23 || minute > 59) return { reason: 'invalid_acquisition_time' }
   if (!Number.isFinite(frpMw) || frpMw < 0) return { reason: 'invalid_frp' }
   if (!row.satellite) return { reason: 'missing_satellite' }
-  if (!row.instrument) return { reason: 'missing_instrument' }
+  const expectedInstrument = product.startsWith('MODIS_') ? 'MODIS' : 'VIIRS'
+  const instrument = row.instrument?.trim().toUpperCase() || expectedInstrument
+  if (instrument !== expectedInstrument) return { reason: 'product_instrument_mismatch' }
+  if (!satellitesByProduct[product].has(row.satellite.trim().toUpperCase())) return { reason: 'product_satellite_mismatch' }
   return {
     observation: {
       latitude, longitude,
       acquiredAtUtc: `${row.acq_date}T${hhmm.slice(0, 2)}:${hhmm.slice(2, 4)}:00Z`,
       satellite: row.satellite,
-      instrument: row.instrument,
+      instrument,
+      instrumentProvenance: row.instrument?.trim() ? 'source-column' : 'inferred-from-product-id',
       productVersion: row.version || null,
       frpMw,
       confidenceNative: row.confidence || null,
@@ -182,6 +197,17 @@ async function run() {
   if ((expectedStart && !expectedEnd) || (!expectedStart && expectedEnd)) throw new Error('Provide both --expected-start and --expected-end, or neither.')
   if (expectedStart && expectedStart > expectedEnd) throw new Error('--expected-start must not be after --expected-end.')
   const retrievedAtUtc = validRetrievedAt(args.get('--retrieved-at'))
+  const sourceUrlArgument = args.get('--source-url')
+  let sourceUrl = 'https://firms.modaps.eosdis.nasa.gov/download/'
+  if (sourceUrlArgument !== undefined) {
+    let parsedSourceUrl
+    try { parsedSourceUrl = new URL(sourceUrlArgument) } catch { throw new Error('--source-url must be a valid HTTPS NASA FIRMS URL.') }
+    if (parsedSourceUrl.protocol !== 'https:' || parsedSourceUrl.hostname !== 'firms.modaps.eosdis.nasa.gov'
+      || parsedSourceUrl.username || parsedSourceUrl.password || parsedSourceUrl.search || parsedSourceUrl.hash) {
+      throw new Error('--source-url must use HTTPS on firms.modaps.eosdis.nasa.gov without credentials, query or fragment.')
+    }
+    sourceUrl = parsedSourceUrl.href
+  }
   const maxRows = Number(args.get('--max-rows') ?? defaultMaxRows)
   if (!Number.isSafeInteger(maxRows) || maxRows < 1) throw new Error('--max-rows must be a positive integer.')
 
@@ -198,6 +224,7 @@ async function run() {
   const duplicateKeys = new Set()
   const warnings = []
   let missingProductVersionRows = 0
+  let inferredInstrumentRows = 0
   const temporaryNormalized = path.join(archiveRoot, 'normalized', product, `${id}.jsonl.${process.pid}.partial`)
   let output
   let headers
@@ -223,9 +250,10 @@ async function run() {
       if (qa.rowsRead > maxRows) throw new Error(`Row limit exceeded (${maxRows}); split the source into smaller files before import.`)
       if (values.length !== headers.length) { qa.rowsRejected += 1; recordSample(qa, 'column_count_mismatch', rowNumber, {}); continue }
       const row = csvRowObject(headers, values)
-      const result = validateObservation(row)
+      const result = validateObservation(row, product)
       if (result.reason) { qa.rowsRejected += 1; recordSample(qa, result.reason, rowNumber, row); continue }
       const observation = result.observation
+      if (observation.instrumentProvenance === 'inferred-from-product-id') inferredInstrumentRows += 1
       if (expectedStart && (observation.acquiredAtUtc.slice(0, 10) < expectedStart || observation.acquiredAtUtc.slice(0, 10) > expectedEnd)) {
         throw new Error(`Observed row ${rowNumber} falls outside declared period ${expectedStart}..${expectedEnd}.`)
       }
@@ -270,6 +298,7 @@ async function run() {
   await rename(temporaryNormalized, normalizedPath)
   if (!retrievedAtUtc) warnings.push('Source retrieval time was not provided; local file modification time is not treated as retrieval time.')
   if (missingProductVersionRows) warnings.push(`${missingProductVersionRows} accepted rows have an empty product version.`)
+  if (inferredInstrumentRows) warnings.push(`${inferredInstrumentRows} accepted rows derive instrument from the selected FIRMS product ID because the CSV has no instrument column.`)
   if (!expectedStart) warnings.push('No expected period was declared; observed date bounds describe only rows found in this file.')
   if (qa.rowsRejected) warnings.push(`${qa.rowsRejected} source rows were excluded for invalid fields or shape.`)
   if (qa.rowsDuplicate) warnings.push(`${qa.rowsDuplicate} exact duplicate source rows were excluded.`)
@@ -278,15 +307,19 @@ async function run() {
     schemaVersion: 1,
     importId: id,
     product,
-    source: 'NASA LANCE FIRMS Archive Download',
-    sourceUrl: 'https://firms.modaps.eosdis.nasa.gov/download/',
+    source: sourceUrl.includes('/data/active_fire/') ? 'NASA LANCE FIRMS public active fire CSV' : 'NASA LANCE FIRMS Archive Download',
+    sourceUrl,
     sourceFile: path.basename(filePath),
     sourceRetrievedAtUtc: retrievedAtUtc,
     importedFileMtimeUtc: metadata.mtime.toISOString(),
     input: { format: 'CSV', bytes: metadata.size, sha256: rawSha256, path: path.relative(root, rawPath) },
     normalized: { format: 'JSONL', bytes: (await stat(normalizedPath)).size, sha256: normalizedHash, path: path.relative(root, normalizedPath) },
-    schema: { columns: headers, requiredColumns },
-    observed: { rowsRead: qa.rowsRead, rowsAccepted: qa.rowsAccepted, rowsDuplicate: qa.rowsDuplicate, rowsRejected: qa.rowsRejected, minDateUtc: dates.min, maxDateUtc: dates.max, satellites: Object.fromEntries([...satellites].sort(([a], [b]) => a.localeCompare(b))) },
+    schema: {
+      columns: headers,
+      requiredColumns,
+      derivedColumns: inferredInstrumentRows ? { instrument: 'inferred from the selected product ID (MODIS_* → MODIS; VIIRS_* → VIIRS)' } : {},
+    },
+    observed: { rowsRead: qa.rowsRead, rowsAccepted: qa.rowsAccepted, rowsDuplicate: qa.rowsDuplicate, rowsRejected: qa.rowsRejected, instrumentInferredRows: inferredInstrumentRows, minDateUtc: dates.min, maxDateUtc: dates.max, satellites: Object.fromEntries([...satellites].sort(([a], [b]) => a.localeCompare(b))) },
     declaredPeriodUtc: expectedStart ? { start: expectedStart, end: expectedEnd } : null,
     provenance: 'Input CSV preserved byte-for-byte; native columns are retained on each normalized JSONL record.',
     limitations: ['Hotspot detections are not an observation-coverage denominator.', 'No returned hotspot does not mean a valid no-fire observation.', 'This import does not harmonize sensors or create daily zero counts.', 'Check the exact product citation, license and redistribution terms before publishing input data.'],

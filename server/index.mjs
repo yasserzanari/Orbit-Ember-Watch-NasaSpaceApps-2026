@@ -13,7 +13,13 @@ const allowedSources = new Set([
   'VIIRS_NOAA21_NRT', 'VIIRS_NOAA21_SP',
   'VIIRS_SNPP_NRT', 'VIIRS_SNPP_SP',
 ])
+const publicNrtFeeds = new Map([
+  ['MODIS_NRT', 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Canada_7d.csv'],
+  ['VIIRS_NOAA20_NRT', 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Canada_7d.csv'],
+  ['VIIRS_NOAA21_NRT', 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-21-viirs-c2/csv/J2_VIIRS_C2_Canada_7d.csv'],
+])
 const cache = new Map()
+const publicFeedCache = new Map()
 let availabilityCache = null
 
 function loadLocalEnv() {
@@ -120,6 +126,89 @@ function validateUtcDate(value) {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : undefined
 }
 
+async function getPublicNrtCsv(source) {
+  const cached = publicFeedCache.get(source)
+  if (cached && cached.expiresAt > Date.now()) return cached.promise
+
+  const url = publicNrtFeeds.get(source)
+  if (!url) throw new Error('This FIRMS product requires a server MAP_KEY; no public Canada near-real-time feed is available.')
+  const promise = (async () => {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 20_000)
+    try {
+      const upstream = await fetch(url, { signal: controller.signal, headers: { accept: 'text/csv' } })
+      if (!upstream.ok) throw new Error(`NASA FIRMS public feed returned HTTP ${upstream.status}.`)
+      const length = Number(upstream.headers.get('content-length'))
+      if (Number.isFinite(length) && length > maxRequestBytes) throw new Error('NASA FIRMS public feed exceeded the configured response limit.')
+      const csv = await upstream.text()
+      if (Buffer.byteLength(csv) > maxRequestBytes) throw new Error('NASA FIRMS public feed exceeded the configured response limit.')
+      const rows = parseCsv(csv)
+      if (rows.length === 0 || !['latitude', 'longitude', 'acq_date', 'acq_time'].every((column) => column in rows[0])) {
+        throw new Error('NASA FIRMS public feed did not contain the expected CSV columns.')
+      }
+      return { rows, fetchedAtUtc: new Date().toISOString(), sourceUrl: url }
+    } catch (error) {
+      if (error?.name === 'AbortError') throw new Error('NASA FIRMS public feed did not answer before the 20 second timeout.')
+      throw error
+    } finally {
+      clearTimeout(timeout)
+    }
+  })()
+  const entry = { promise, expiresAt: Date.now() + 120_000 }
+  publicFeedCache.set(source, entry)
+  try {
+    return await promise
+  } catch (error) {
+    if (publicFeedCache.get(source) === entry) publicFeedCache.delete(source)
+    throw error
+  }
+}
+
+async function getPublicNrtFirms(response, { source, bbox, days, requestedStartDate, todayUtc }) {
+  if (!publicNrtFeeds.has(source)) {
+    return json(response, 503, { code: 'firms_key_missing', message: 'This FIRMS product requires FIRMS_MAP_KEY in the local server environment. Public keyless feeds are available only for the latest seven days of MODIS and NOAA-20/NOAA-21 detections in Canada.' })
+  }
+  let feed
+  try {
+    feed = await getPublicNrtCsv(source)
+  } catch (error) {
+    return json(response, 502, { code: 'firms_public_feed_error', message: error instanceof Error ? error.message : 'NASA FIRMS public near-real-time data could not be loaded.' })
+  }
+
+  const queryEndDate = requestedStartDate ? shiftUtcDay(requestedStartDate, days - 1) : todayUtc
+  const queryStartDate = requestedStartDate ?? shiftUtcDay(queryEndDate, 1 - days)
+  const feedDates = feed.rows.map((row) => validateUtcDate(row.acq_date)).filter(Boolean).sort()
+  const minFeedDate = feedDates[0]
+  const maxFeedDate = feedDates.at(-1)
+  if (!minFeedDate || !maxFeedDate) return json(response, 502, { code: 'firms_public_feed_empty', message: 'NASA FIRMS public near-real-time feed did not contain dated observations.' })
+  if (queryStartDate < minFeedDate) {
+    return json(response, 422, { code: 'firms_public_feed_date_limit', message: `The keyless NASA FIRMS feed contains data from ${minFeedDate} through ${maxFeedDate} UTC only. Choose a window within those dates or configure FIRMS_MAP_KEY for a date-specific request.` })
+  }
+
+  const [west, south, east, north] = bbox
+  const observations = normalizeRows(feed.rows.filter((row) => {
+    const latitude = numberOrNull(row.latitude)
+    const longitude = numberOrNull(row.longitude)
+    const date = validateUtcDate(row.acq_date)
+    return latitude !== null && longitude !== null && date !== null
+      && date >= queryStartDate && date <= queryEndDate
+      && longitude >= west && longitude <= east && latitude >= south && latitude <= north
+  }), source)
+  return json(response, 200, {
+    source,
+    bbox,
+    dayRange: days,
+    queryStartDate,
+    queryEndDate,
+    fetchedAtUtc: feed.fetchedAtUtc,
+    count: observations.length,
+    observations,
+    accessMode: 'public-nrt-canada-csv',
+    sourceUrl: feed.sourceUrl,
+    sourceDateRange: { minDate: minFeedDate, maxDate: maxFeedDate },
+  }, { 'x-data-cache': 'public-feed' })
+}
+
 async function getFirms(requestUrl, response) {
   if (requestUrl.searchParams.has('map_key') || requestUrl.searchParams.has('key')) {
     return json(response, 400, { code: 'secret_in_query', message: 'Do not send a FIRMS key from the browser.' })
@@ -136,7 +225,7 @@ async function getFirms(requestUrl, response) {
   if (requestedStartDate && shiftUtcDay(requestedStartDate, days - 1) > todayUtc) return json(response, 400, { code: 'future_date_window', message: 'The selected FIRMS date window cannot extend into the future.' })
 
   const key = process.env.FIRMS_MAP_KEY
-  if (!key) return json(response, 503, { code: 'firms_key_missing', message: 'Configure FIRMS_MAP_KEY in the local server environment.' })
+  if (!key) return getPublicNrtFirms(response, { source, bbox, days, requestedStartDate, todayUtc })
 
   const cacheKey = JSON.stringify([source, bbox, days, requestedStartDate])
   const cached = cache.get(cacheKey)
@@ -157,7 +246,7 @@ async function getFirms(requestUrl, response) {
     const observations = normalizeRows(rows, source)
     const queryEndDate = requestedStartDate ? shiftUtcDay(requestedStartDate, days - 1) : todayUtc
     const queryStartDate = requestedStartDate ?? shiftUtcDay(queryEndDate, 1 - days)
-    const payload = { source, bbox, dayRange: days, queryStartDate, queryEndDate, fetchedAtUtc: new Date().toISOString(), count: observations.length, observations }
+    const payload = { source, bbox, dayRange: days, queryStartDate, queryEndDate, fetchedAtUtc: new Date().toISOString(), count: observations.length, observations, accessMode: 'map-key-area-api' }
     cache.set(cacheKey, { expiresAt: Date.now() + 120_000, payload })
     if (cache.size > 128) cache.delete(cache.keys().next().value)
     return json(response, 200, payload, { 'x-data-cache': 'miss' })
@@ -299,7 +388,7 @@ async function serveStatic(pathname, response) {
 loadLocalEnv()
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || '/', 'http://localhost')
-  if (url.pathname === '/api/health') return json(response, 200, { service: 'orbit-ember-watch', firmsConfigured: Boolean(process.env.FIRMS_MAP_KEY) })
+  if (url.pathname === '/api/health') return json(response, 200, { service: 'orbit-ember-watch', firmsConfigured: Boolean(process.env.FIRMS_MAP_KEY), publicNrtSupported: publicNrtFeeds.size > 0 })
   if (url.pathname === '/api/firms') {
     if (request.method !== 'GET') return json(response, 405, { code: 'method_not_allowed' }, { allow: 'GET' })
     return getFirms(url, response)

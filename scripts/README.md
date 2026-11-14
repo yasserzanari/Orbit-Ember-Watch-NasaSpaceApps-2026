@@ -24,3 +24,16 @@ Le pipeline lit le CSV en flux, impose un plafond par défaut d’un million de 
 - L’import documente explicitement qu’un CSV de hotspots ne fournit pas de dénominateur de couverture et que l’absence de ligne n’est pas une observation valide sans feu.
 
 Les lignes de confiance restent dans leur champ natif, sans équivalence MODIS/VIIRS. Le pipeline n’harmonise pas les capteurs et ne crée aucun zéro journalier. Vérifier la collection, la citation et les droits de redistribution du produit exact avant toute publication. Ne jamais commiter MAP_KEY, token ou données dont la redistribution n’est pas autorisée.
+
+## Agrégats quotidiens, hebdomadaires et mensuels
+
+Après un ou plusieurs imports QA acceptés, générer les comptes reproductibles par produit avec :
+
+```sh
+npm run data:firms:aggregate
+npm run data:firms:aggregate -- --product VIIRS_NOAA21_SP
+```
+
+Le script re-vérifie les paires manifeste/QA, les SHA-256 des CSV sources et des JSONL normalisés, puis déduplique les lignes identiques entre imports qui se chevauchent. Il conserve le produit, le satellite, la version, les classes de confiance natives et les drapeaux jour/nuit. Les fichiers sortent dans `data/private/firms/aggregates/`, exclu de Git. Aucun jour vide n’est créé; l’absence d’une ligne reste inconnue et les produits ne sont pas harmonisés.
+
+L’importeur accepte les CSV FIRMS dont le champ `instrument` est absent : il le dérive explicitement du produit sélectionné (`MODIS_*` ou `VIIRS_*`) et conserve les colonnes réellement présentes dans `native`. Les manifestes enregistrent cette dérivation et l’URL NASA officielle si `--source-url` est fourni.

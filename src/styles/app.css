@@ -365,3 +365,75 @@
   .field-mobile-tabs button.active { border-color: #25d2d84d; background: #14313b; color: var(--accent-wind); }
   .field-mobile-tabs button:focus-visible { outline: 2px solid var(--accent-wind); outline-offset: 2px; }
 }
+
+/* Compact, high-contrast wind scale inspired by the live meteorological map reference. */
+.wind-speed-legend { top: 12px; left: 50%; width: min(560px, calc(100% - 260px)); min-width: 350px; padding: 8px 13px 7px; transform: translateX(-50%); border: 1px solid rgba(28,49,53,.38); border-radius: 10px; background: rgba(250,247,235,.94); box-shadow: 0 5px 18px rgba(6,17,24,.28); color: #24343a; backdrop-filter: blur(9px); }
+.wind-speed-legend-heading { margin-bottom: 6px; }
+.wind-speed-legend-heading>span { gap: 8px; color: #25353a; font-size: 9px; letter-spacing: .08em; }
+.wind-speed-legend-heading>span small { padding: 2px 5px; border-radius: 4px; background: rgba(45,67,70,.1); color: #465a5d; font-size: 8px; letter-spacing: .03em; }
+.wind-speed-legend-heading>b { gap: 12px; color: #26383d; font-size: 9px; }
+.wind-speed-legend-heading>b>span { display: flex; align-items: center; gap: 5px; }
+.wind-speed-legend-heading>b .wind-stat-dot { width: 6px; height: 6px; border-radius: 50%; background: #397e8b; }
+.wind-speed-legend-heading>b .wind-stat-dot.peak { background: #e08334; }
+.wind-speed-ramp { height: 9px; border: 1px solid rgba(27,48,53,.36); background: linear-gradient(90deg,#adb6b6 0%,#a9d5db 5%,#7fbec5 10%,#9ecbaa 17.5%,#f2c55e 25%,#ef963e 35%,#e4554b 50%,#da75b6 75%,#173c49 100%); box-shadow: inset 0 1px 2px rgba(20,37,43,.18); }
+.wind-speed-ticks { margin-top: 4px; color: #33464a; font-size: 8px; }
+.wind-speed-legend>small { margin-top: 5px; color: #586a6c; font-size: 8px; }
+.wind-speed-legend>small>span { padding: 0 3px; color: #a66a32; }
+.map-frame:has(.wind-speed-legend) .map-field-badge { top: auto; bottom: 42px; }
+@media (max-width: 1100px) {
+  .wind-speed-legend { width: min(500px, calc(100% - 30px)); min-width: 0; }
+}
+@media (max-width: 760px) {
+  .wind-speed-legend { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; min-width: 0; padding: 8px 9px 7px; transform: none; }
+  .wind-speed-legend-heading>b { font-size: 9px; }
+  .wind-speed-legend-heading>span { font-size: 8px; }
+  .wind-speed-ticks { font-size: 7px; }
+  .wind-speed-legend>small { font-size: 7px; }
+}
+
+/* Map overlays use a shared glass treatment; primary text remains fully opaque. */
+.map-toolbar { background: var(--glass-surface); backdrop-filter: blur(var(--glass-blur)) saturate(128%); }
+.dashboard-map-summary { width: 304px; gap: 10px; padding: 15px; border: 1px solid var(--glass-border); border-radius: 14px; background: linear-gradient(145deg,var(--glass-surface-raised),var(--glass-surface)); box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight); backdrop-filter: blur(var(--glass-blur)) saturate(138%); }
+.dashboard-summary-header { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 8px; }
+.dashboard-summary-emblem { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid rgba(242,104,59,.28); border-radius: 10px; background: linear-gradient(145deg,rgba(242,104,59,.22),rgba(244,177,47,.08)); color: var(--signal-high); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+.dashboard-summary-title { display: grid; min-width: 0; gap: 3px; }
+.dashboard-summary-title>span { color: var(--text-secondary); font: 500 8px var(--font-data); letter-spacing: .11em; }
+.dashboard-summary-title h2 { overflow: hidden; margin: 0; color: var(--text-primary); font-size: 13px; font-weight: 600; letter-spacing: -.015em; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-status-pill { display: inline-flex; min-height: 23px; align-items: center; gap: 5px; padding: 0 7px; border: 1px solid var(--glass-border); border-radius: 999px; background: rgba(7,17,26,.44); color: #c7d5d9; font: 500 8px var(--font-data); white-space: nowrap; }
+.dashboard-status-pill i { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: #8399a1; }
+.dashboard-status-pill.ready i,.dashboard-status-pill.public i { background: var(--accent-wind); box-shadow: 0 0 8px color-mix(in srgb,var(--accent-wind) 65%,transparent); }
+.dashboard-status-pill.loading i { background: var(--accent-caution); animation: live-pulse 1.2s ease-in-out infinite; }
+.dashboard-status-pill.blocked i { background: var(--accent-caution); }
+.dashboard-status-pill.error { border-color: color-mix(in srgb,var(--signal-high) 36%,transparent); color: #ffc0a5; }
+.dashboard-status-pill.error i { background: var(--signal-high); }
+.dashboard-summary-context { display: flex; min-width: 0; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 9px; }
+.dashboard-summary-context svg { flex: 0 0 auto; color: var(--accent-wind); }
+.dashboard-summary-context b { overflow: hidden; color: #d9e5e8; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-summary-context i { width: 3px; height: 3px; flex: 0 0 3px; border-radius: 50%; background: #76909a; }
+.dashboard-summary-context span { white-space: nowrap; }
+.dashboard-map-summary>small { color: var(--text-secondary); font-size: 9px; }
+.dashboard-detection-count { gap: 11px; padding: 11px; border-color: var(--glass-border); border-radius: 10px; background: linear-gradient(115deg,var(--glass-surface-raised),rgba(9,25,35,.64)); box-shadow: inset 0 1px 0 var(--glass-highlight); }
+.dashboard-detection-count>span { min-width: 58px; color: var(--accent-caution); font-size: 29px; letter-spacing: -.055em; }
+.dashboard-detection-count>div { min-width: 0; gap: 4px; }
+.dashboard-detection-count b { color: #e2ecee; font-size: 10px; }
+.dashboard-detection-count small { color: var(--text-secondary); font-size: 8px; line-height: 1.35; }
+.dashboard-product-line { min-width: 0; gap: 8px; color: #c0d0d4; font-size: 9px; }
+.dashboard-product-line svg { color: var(--accent-wind); }
+.dashboard-product-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-condition-row { gap: 7px; }
+.dashboard-condition-row>div { min-width: 0; gap: 5px 7px; padding: 9px; border-color: var(--glass-border); border-radius: 9px; background: var(--glass-surface-raised); box-shadow: inset 0 1px 0 var(--glass-highlight); }
+.dashboard-condition-row svg { color: var(--accent-wind); }
+.dashboard-condition-row span { color: var(--text-secondary); font-size: 8px; }
+.dashboard-condition-row b { color: var(--text-primary); font-size: 10px; }
+.dashboard-key-note { margin: 0; color: #f0d498; font-size: 9px; line-height: 1.45; }
+.dashboard-key-note.error-note { color: #ffc0a5; }
+.dashboard-load-button { min-height: 38px; margin-top: 0; border-color: color-mix(in srgb,var(--accent-wind) 46%,transparent); border-radius: 9px; background: linear-gradient(105deg,color-mix(in srgb,var(--accent-wind) 15%,transparent),rgba(37,210,216,.06)); color: #a8fbf4; font-size: 10px; transition: border-color .16s ease,background .16s ease,transform .16s ease; }
+.dashboard-load-button:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--accent-wind); background: color-mix(in srgb,var(--accent-wind) 19%,transparent); }
+.dashboard-load-button:focus-visible { outline: 2px solid var(--accent-wind); outline-offset: 3px; }
+.dashboard-load-button:disabled { border-color: var(--glass-border); background: rgba(18,35,48,.55); color: #a6b8bd; }
+.dashboard-freshness { color: #a3b5ba; font-size: 8px; line-height: 1.4; }
+@media (max-width: 1100px) and (min-width: 761px) { .dashboard-map-summary { width: 242px; padding: 11px; gap: 8px; }.dashboard-summary-header { grid-template-columns: 30px minmax(0,1fr) auto; gap: 6px; }.dashboard-summary-emblem { width: 30px; height: 30px; }.dashboard-status-pill { min-height: 21px; padding: 0 5px; font-size: 7px; }.dashboard-summary-title h2 { font-size: 12px; } }
+@media (max-width: 760px) { .dashboard-map-summary { width: min(224px,calc(100% - 16px)); max-height: calc(100% - 16px); padding: 10px; gap: 7px; border-radius: 12px; }.dashboard-summary-header { grid-template-columns: 28px minmax(0,1fr) auto; gap: 6px; }.dashboard-summary-emblem { width: 28px; height: 28px; }.dashboard-summary-title>span { font-size: 7px; }.dashboard-summary-title h2 { font-size: 11px; }.dashboard-status-pill { min-height: 20px; gap: 4px; padding: 0 5px; font-size: 7px; }.dashboard-detection-count { gap: 8px; padding: 8px; }.dashboard-detection-count>span { min-width: 46px; font-size: 21px; }.dashboard-detection-count b { font-size: 9px; }.dashboard-detection-count small { font-size: 7px; }.dashboard-condition-row>div { padding: 7px; }.dashboard-load-button { min-height: 36px; font-size: 9px; } }
+@media (min-width: 1101px) { .dashboard-workspace .wind-speed-legend { left: auto; right: 60px; width: min(560px,calc(100% - 386px)); min-width: 240px; transform: none; } }
+@media (max-width: 1100px) and (min-width: 761px) { .dashboard-workspace .wind-speed-legend { top: auto; bottom: 12px; left: 12px; right: 12px; width: min(500px,calc(100% - 24px)); min-width: 0; transform: none; }.dashboard-workspace .map-frame:has(.wind-speed-legend) .map-field-badge { bottom: 105px; } }
+@media (max-width: 760px) { .dashboard-workspace .map-frame:has(.wind-speed-legend) .map-field-badge { bottom: 105px; } }

@@ -29,6 +29,7 @@ type LiveSensorKey = 'modis-terra' | 'modis-aqua' | 'noaa20' | 'noaa21'
 type WindSample = { time: string; speedKmh: number | null; directionFrom: number | null }
 type WindNode = { id: string; latitude: number; longitude: number; samples: WindSample[] }
 type WindFieldState = { state: 'loading' | 'ready' | 'error'; nodes: WindNode[]; retrievedAt: string | null; error?: string }
+type WindViewport = { centerLatitude: number; centerLongitude: number; zoom: number; width: number; height: number }
 type MapSyncGroup = { maps: Set<MapLibreMap>; syncing: boolean }
 type FireObservation = {
   id: string
@@ -135,17 +136,19 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [queryRange, setQueryRange] = useState<{ start: string; end: string } | null>(null)
   const [configured, setConfigured] = useState<boolean | null>(null)
+  const [publicNrtSupported, setPublicNrtSupported] = useState(false)
+  const [accessMode, setAccessMode] = useState<'public-nrt-canada-csv' | 'map-key-area-api' | null>(null)
   const requestController = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/health', { signal: controller.signal }).then((response) => response.json()).then((payload) => setConfigured(Boolean(payload.firmsConfigured))).catch(() => setConfigured(false))
+    fetch('/api/health', { signal: controller.signal }).then((response) => response.json()).then((payload) => { setConfigured(Boolean(payload.firmsConfigured)); setPublicNrtSupported(Boolean(payload.publicNrtSupported)) }).catch(() => { setConfigured(false); setPublicNrtSupported(false) })
     return () => controller.abort()
   }, [])
 
   useEffect(() => {
     requestController.current?.abort()
-    setState('idle'); setMessage(''); setObservations([]); setFetchedAt(null); setQueryRange(null)
+    setState('idle'); setMessage(''); setObservations([]); setFetchedAt(null); setQueryRange(null); setAccessMode(null)
     return () => requestController.current?.abort()
   }, [lat, lon, source, days])
 
@@ -168,12 +171,12 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
       if (!response.ok) throw new Error(payload.message || 'FIRMS observations could not be loaded.')
       setObservations(Array.isArray(payload.observations) ? payload.observations : [])
       setFetchedAt(payload.fetchedAtUtc || null)
+      setAccessMode(payload.accessMode === 'public-nrt-canada-csv' || payload.accessMode === 'map-key-area-api' ? payload.accessMode : null)
       setQueryRange(typeof payload.queryStartDate === 'string' && typeof payload.queryEndDate === 'string'
         ? { start: payload.queryStartDate, end: payload.queryEndDate }
         : null)
       setMessage(payload.count === 0 ? 'NASA returned a valid response with no detections in this area and time window. This does not establish that no fire is present.' : `${payload.count.toLocaleString()} satellite detections returned for the selected product and window.`)
       setState('ready')
-      setConfigured(true)
     } catch (error) {
       if (controller.signal.aborted) return
       setState('error')
@@ -183,7 +186,7 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
     }
   }
 
-  return { source, days, observations, state, message, fetchedAt, queryRange, configured, load }
+  return { source, days, observations, state, message, fetchedAt, queryRange, configured, publicNrtSupported, accessMode, load }
 }
 
 const navItems = [
@@ -226,8 +229,8 @@ function observationDayNight(value: string | null) {
 
 function matchesLiveSensor(observation: FireObservation, sensor: typeof liveSensorOptions[number]) {
   const satellite = observation.satellite?.trim().toLowerCase().replaceAll('_', '-').replaceAll(' ', '-') ?? ''
-  if (sensor.key === 'modis-terra') return observation.source === 'MODIS_NRT' && (satellite.includes('terra') || !satellite)
-  if (sensor.key === 'modis-aqua') return observation.source === 'MODIS_NRT' && satellite.includes('aqua')
+  if (sensor.key === 'modis-terra') return observation.source === 'MODIS_NRT' && (satellite === 't' || satellite.includes('terra'))
+  if (sensor.key === 'modis-aqua') return observation.source === 'MODIS_NRT' && (satellite === 'a' || satellite.includes('aqua'))
   if (sensor.key === 'noaa20') return observation.source === 'VIIRS_NOAA20_NRT' && (!satellite || satellite.includes('noaa-20') || satellite.includes('20'))
   return observation.source === 'VIIRS_NOAA21_NRT' && (!satellite || satellite.includes('noaa-21') || satellite.includes('21'))
 }
@@ -281,58 +284,76 @@ function useWeather(lat: number, lon: number) {
   return { hours, retrievedAt, state, retry: () => setRetry((value) => value + 1) }
 }
 
-function useWindField(lat: number, lon: number) {
+function normalizeLongitude(longitude: number) {
+  return ((longitude + 180) % 360 + 360) % 360 - 180
+}
+
+function createWindGrid(lat: number, lon: number, viewport: WindViewport | null) {
+  const centerLatitude = viewport?.centerLatitude ?? lat
+  const centerLongitude = viewport?.centerLongitude ?? lon
+  const latitudeMetersPerDegree = Math.max(0.2, Math.cos(centerLatitude * Math.PI / 180))
+  const zoomScale = viewport ? 512 * 2 ** Math.min(18, Math.max(1, viewport.zoom)) : 512 * 2 ** 6.2
+  const halfLongitude = viewport ? Math.min(22, Math.max(0.12, viewport.width * 180 / zoomScale * 1.35)) : 0.8
+  const halfLatitude = viewport ? Math.min(12, Math.max(0.1, viewport.height * 180 / zoomScale * latitudeMetersPerDegree * 1.35)) : 0.65
+  return [-2, -1, 0, 1, 2].flatMap((stepLat) => [-2, -1, 0, 1, 2].map((stepLon) => ({
+    latitude: Math.max(-82, Math.min(82, centerLatitude + (stepLat / 2) * halfLatitude)),
+    longitude: normalizeLongitude(centerLongitude + (stepLon / 2) * halfLongitude),
+  })))
+}
+
+function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
   const [field, setField] = useState<WindFieldState>({ state: 'loading', nodes: [], retrievedAt: null })
+  const gridSignature = viewport
+    ? [viewport.centerLatitude, viewport.centerLongitude].map((value) => Math.round(value * 4) / 4).concat([Math.round(viewport.zoom * 4) / 4, Math.round(viewport.width / 64) * 64, Math.round(viewport.height / 64) * 64]).join(',')
+    : `${Math.round(lat * 10) / 10},${Math.round(lon * 10) / 10}`
 
   useEffect(() => {
     const controller = new AbortController()
-    setField({ state: 'loading', nodes: [], retrievedAt: null })
-    const offsets = [-2, -1, 0, 1, 2]
-    const coordinates = offsets.flatMap((latitudeOffset) => offsets.map((longitudeOffset) => ({
-      latitude: Math.max(-85, Math.min(85, lat + latitudeOffset * 1.5)),
-      longitude: Math.max(-180, Math.min(180, lon + longitudeOffset * 2)),
-    })))
-    const params = new URLSearchParams({
-      latitude: coordinates.map((point) => point.latitude.toFixed(3)).join(','),
-      longitude: coordinates.map((point) => point.longitude.toFixed(3)).join(','),
-      hourly: 'wind_speed_10m,wind_direction_10m',
-      wind_speed_unit: 'kmh', timezone: 'UTC', forecast_days: '7', past_days: '1',
-    })
-    fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Wind grid service returned ${response.status}`)
-        return response.json()
+    const timeout = window.setTimeout(() => {
+      const coordinates = createWindGrid(lat, lon, viewport)
+      const params = new URLSearchParams({
+        latitude: coordinates.map((point) => point.latitude.toFixed(3)).join(','),
+        longitude: coordinates.map((point) => point.longitude.toFixed(3)).join(','),
+        hourly: 'wind_speed_10m,wind_direction_10m',
+        wind_speed_unit: 'kmh', timezone: 'UTC', forecast_days: '7', past_days: '1',
       })
-      .then((payload: unknown) => {
-        const records = (Array.isArray(payload) ? payload : [payload]) as Array<{
-          latitude?: number
-          longitude?: number
-          hourly?: { time?: string[]; wind_speed_10m?: number[]; wind_direction_10m?: number[] }
-        }>
-        if (records.length !== coordinates.length) throw new Error('Wind grid response did not include every requested point')
-        const nodes = records.map((record, index): WindNode | null => {
-          const hourly = record.hourly
-          if (!Array.isArray(hourly?.time) || !Array.isArray(hourly.wind_speed_10m) || !Array.isArray(hourly.wind_direction_10m)) return null
-          return {
-            id: `wind-${index}`,
-            latitude: Number.isFinite(record.latitude) ? record.latitude! : coordinates[index].latitude,
-            longitude: Number.isFinite(record.longitude) ? record.longitude! : coordinates[index].longitude,
-            samples: hourly.time.map((time, hourIndex) => ({
-              time,
-              speedKmh: Number.isFinite(hourly.wind_speed_10m![hourIndex]) ? hourly.wind_speed_10m![hourIndex] : null,
-              directionFrom: Number.isFinite(hourly.wind_direction_10m![hourIndex]) ? hourly.wind_direction_10m![hourIndex] : null,
-            })),
-          }
-        }).filter((node): node is WindNode => node !== null)
-        if (nodes.length < 9) throw new Error('Wind grid has too few valid points to draw a field')
-        setField({ state: 'ready', nodes, retrievedAt: new Date().toISOString() })
-      })
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return
-        setField({ state: 'error', nodes: [], retrievedAt: null, error: error instanceof Error ? error.message : 'Wind field unavailable' })
-      })
-    return () => controller.abort()
-  }, [lat, lon])
+      setField((current) => ({ ...current, state: 'loading', error: undefined }))
+      fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: controller.signal })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Wind grid service returned ${response.status}`)
+          return response.json()
+        })
+        .then((payload: unknown) => {
+          const records = (Array.isArray(payload) ? payload : [payload]) as Array<{
+            latitude?: number
+            longitude?: number
+            hourly?: { time?: string[]; wind_speed_10m?: number[]; wind_direction_10m?: number[] }
+          }>
+          if (records.length !== coordinates.length) throw new Error('Wind grid response did not include every requested point')
+          const nodes = records.map((record, index): WindNode | null => {
+            const hourly = record.hourly
+            if (!Array.isArray(hourly?.time) || !Array.isArray(hourly.wind_speed_10m) || !Array.isArray(hourly.wind_direction_10m)) return null
+            return {
+              id: `wind-${coordinates[index].latitude.toFixed(3)}-${coordinates[index].longitude.toFixed(3)}`,
+              latitude: Number.isFinite(record.latitude) ? record.latitude! : coordinates[index].latitude,
+              longitude: Number.isFinite(record.longitude) ? normalizeLongitude(record.longitude!) : coordinates[index].longitude,
+              samples: hourly.time.map((time, hourIndex) => ({
+                time,
+                speedKmh: Number.isFinite(hourly.wind_speed_10m![hourIndex]) ? hourly.wind_speed_10m![hourIndex] : null,
+                directionFrom: Number.isFinite(hourly.wind_direction_10m![hourIndex]) ? hourly.wind_direction_10m![hourIndex] : null,
+              })),
+            }
+          }).filter((node): node is WindNode => node !== null)
+          if (nodes.length < 9) throw new Error('Wind grid has too few valid points to draw a field')
+          setField({ state: 'ready', nodes, retrievedAt: new Date().toISOString() })
+        })
+        .catch((error: unknown) => {
+          if (error instanceof Error && error.name === 'AbortError') return
+          setField((current) => ({ ...current, state: 'error', error: error instanceof Error ? error.message : 'Wind field unavailable' }))
+        })
+    }, 700)
+    return () => { window.clearTimeout(timeout); controller.abort() }
+  }, [gridSignature])
 
   return field
 }
@@ -415,8 +436,8 @@ function createWindParticle(): ImageData {
 
 function windSpeedColor(speedKmh: number): [number, number, number] {
   const stops: Array<[number, number, number, number]> = [
-    [0, 51, 133, 165], [10, 57, 175, 181], [20, 110, 199, 184], [35, 218, 220, 159],
-    [50, 250, 203, 83], [70, 246, 133, 53], [100, 231, 74, 63], [150, 192, 64, 148], [200, 94, 185, 202],
+    [0, 173, 182, 182], [10, 169, 213, 219], [20, 127, 190, 197], [35, 158, 203, 170],
+    [50, 242, 197, 94], [70, 239, 150, 62], [100, 228, 85, 75], [150, 218, 117, 182], [200, 23, 60, 73],
   ]
   const value = Math.max(0, Math.min(200, speedKmh))
   const upperIndex = stops.findIndex(([stop]) => stop >= value)
@@ -521,17 +542,29 @@ function ensureWindLayers(instance: MapLibreMap) {
   })
 }
 
-function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, syncGroup, terrainTransect }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][] }) {
+function whenMapStyleReady(instance: MapLibreMap, callback: () => void) {
+  if (instance.getLayer('osm-raster-base')) {
+    callback()
+    return () => {}
+  }
+  const onStyleLoad = () => callback()
+  instance.once('style.load', onStyleLoad)
+  return () => instance.off('style.load', onStyleLoad)
+}
+
+function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, onCameraChange, syncGroup, terrainTransect }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; onCameraChange: (viewport: WindViewport) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][] }) {
   const element = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
   const selectPoint = useRef(onSelectPoint)
   const selectObservation = useRef(onSelectObservation)
+  const reportCamera = useRef(onCameraChange)
   const observationsRef = useRef(observations)
   const windNodesRef = useRef(windNodes)
   const windTimeRef = useRef(windTime)
   useEffect(() => { selectPoint.current = onSelectPoint }, [onSelectPoint])
   useEffect(() => { selectObservation.current = onSelectObservation }, [onSelectObservation])
+  useEffect(() => { reportCamera.current = onCameraChange }, [onCameraChange])
   useEffect(() => { observationsRef.current = observations }, [observations])
   useEffect(() => { windNodesRef.current = windNodes; windTimeRef.current = windTime }, [windNodes, windTime])
   useEffect(() => {
@@ -581,7 +614,16 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     })
     map.current.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
     map.current.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
-    map.current.on('load', () => {
+    const emitCameraBounds = () => {
+      const current = map.current
+      if (!current) return
+      const center = current.getCenter()
+      const canvas = current.getCanvas()
+      reportCamera.current({ centerLatitude: center.lat, centerLongitude: normalizeLongitude(center.lng), zoom: current.getZoom(), width: canvas.clientWidth, height: canvas.clientHeight })
+    }
+    map.current.on('moveend', emitCameraBounds)
+    map.current.once('style.load', emitCameraBounds)
+    map.current.on('style.load', () => {
       map.current?.setTerrain({ source: 'albertaDem', exaggeration: 1.2 })
       map.current?.addLayer({
         id: 'alberta-hillshade', type: 'hillshade', source: 'albertaDem',
@@ -636,6 +678,19 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
   }, [syncGroup])
 
   useEffect(() => {
+    const instance = map.current
+    const container = element.current
+    if (!instance || !container || typeof ResizeObserver === 'undefined') return
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => instance.resize())
+    })
+    observer.observe(container)
+    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+  }, [])
+
+  useEffect(() => {
     if (!map.current) return
     const collection = {
       type: 'FeatureCollection' as const,
@@ -680,9 +735,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
         },
       })
     }
-    if (map.current.isStyleLoaded()) syncLayer()
-    else map.current.once('load', syncLayer)
-    return () => { map.current?.off('load', syncLayer) }
+    return whenMapStyleReady(map.current, syncLayer)
   }, [observations])
 
   useEffect(() => {
@@ -699,9 +752,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       const source = instance.getSource('terrain-transect') as GeoJSONSource | undefined
       source?.setData(featureCollection)
     }
-    if (instance.isStyleLoaded() && instance.getSource('terrain-transect')) sync()
-    else instance.once('load', sync)
-    return () => { instance.off('load', sync) }
+    return whenMapStyleReady(instance, sync)
   }, [terrainTransect])
 
   useEffect(() => {
@@ -711,9 +762,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       instance.setTerrain(terrainEnabled ? { source: 'albertaDem', exaggeration: 1.2 } : null)
       instance.easeTo({ pitch: terrainEnabled ? 62 : 0, duration: 900 })
     }
-    if (instance.isStyleLoaded()) applyTerrain()
-    else instance.once('load', applyTerrain)
-    return () => { instance.off('load', applyTerrain) }
+    return whenMapStyleReady(instance, applyTerrain)
   }, [terrainEnabled])
 
   useEffect(() => {
@@ -819,11 +868,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       } else updateWind()
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    if (instance.isStyleLoaded()) updateWind()
-    else {
-      instance.once('load', updateWind)
-      removeLoadListener = () => instance.off('load', updateWind)
-    }
+    removeLoadListener = whenMapStyleReady(instance, updateWind)
     return () => { if (timer) clearInterval(timer); removeLoadListener(); document.removeEventListener('visibilitychange', handleVisibilityChange) }
   }, [windNodes, windTime, windVisible, reducedMotion])
 
@@ -842,10 +887,10 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     {direction !== undefined && !windVisible && <div className="map-wind" style={{ transform: `rotate(${direction}deg)` }} aria-label={`Wind blows toward ${windDirectionLabel(direction)}`}><Wind size={24} /></div>}
     <div className="map-field-badge"><span className={windVisible && windNodes.length ? 'field-live-dot' : ''} />{windVisible ? `${windNodes.length || '—'}-point wind field` : 'Wind field hidden'} · {terrainEnabled ? '3D relief' : '2D'}</div>
     {windVisible && windNodes.length > 0 && <div className="wind-speed-legend" aria-label="Wind speed scale in kilometres per hour">
-      <div className="wind-speed-legend-heading"><span><Wind size={13} /> WIND SPEED <small>KM/H</small></span><b>{meanWindSpeed === null ? '—' : `${Math.round(meanWindSpeed)} avg`}<i />{peakWindSpeed === null ? '—' : `${Math.round(peakWindSpeed)} peak`}</b></div>
+      <div className="wind-speed-legend-heading"><span>WIND SPEED <small>km/h</small></span><b><span><i className="wind-stat-dot average" />{meanWindSpeed === null ? '—' : `${Math.round(meanWindSpeed)} avg`}</span><span><i className="wind-stat-dot peak" />{peakWindSpeed === null ? '—' : `${Math.round(peakWindSpeed)} peak`}</span></b></div>
       <div className="wind-speed-ramp" />
       <div className="wind-speed-ticks"><span>0</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>60</span><span>80</span><span>100</span><span>150</span><span>200+</span></div>
-      <small>Colour shows forecast speed · {reducedMotion ? 'static arrows show direction' : 'white streaks show wind direction'} · {windTime ? `${new Date(windTime).toISOString().slice(11, 16)} UTC` : 'time unavailable'}</small>
+      <small>{reducedMotion ? 'Arrows show wind direction' : 'Animated streaks show wind direction'} <span>·</span> {windTime ? `${new Date(windTime).toISOString().slice(11, 16)} UTC forecast` : 'time unavailable'}</small>
     </div>}
     <div className="map-caption">Basemap © OpenStreetMap · Terrain © Mapzen · Wind: Open-Meteo</div>
   </div>
@@ -1010,7 +1055,12 @@ export function App() {
   const [transectVisible, setTransectVisible] = useState(true)
   const [terrainRefresh, setTerrainRefresh] = useState(0)
   const [elevation, setElevation] = useState<{ value: number; state: 'loading' | 'ready' | 'error' }>({ value: 0, state: 'loading' })
+  const [windViewport, setWindViewport] = useState<WindViewport | null>(null)
   const compareMapSync = useRef<MapSyncGroup>({ maps: new Set(), syncing: false })
+  const updateWindViewport = useCallback((viewport: WindViewport) => {
+    const next = { centerLatitude: Math.round(viewport.centerLatitude * 4) / 4, centerLongitude: Math.round(viewport.centerLongitude * 4) / 4, zoom: Math.round(viewport.zoom * 4) / 4, width: Math.round(viewport.width / 64) * 64, height: Math.round(viewport.height / 64) * 64 }
+    setWindViewport((current) => current && current.centerLatitude === next.centerLatitude && current.centerLongitude === next.centerLongitude && current.zoom === next.zoom && current.width === next.width && current.height === next.height ? current : next)
+  }, [])
   useEffect(() => {
     const viewport = window.matchMedia('(max-width: 760px)')
     const updateViewport = () => setIsMobileViewport(viewport.matches)
@@ -1018,7 +1068,7 @@ export function App() {
     return () => viewport.removeEventListener('change', updateViewport)
   }, [])
   const { hours, retrievedAt, state, retry } = useWeather(location.lat, location.lon)
-  const windField = useWindField(location.lat, location.lon)
+  const windField = useWindField(location.lat, location.lon, windViewport)
   const firms = useFirms(location.lat, location.lon, firmsProduct, firmsDays, queryEndDate)
   const liveModis = useFirms(location.lat, location.lon, 'MODIS_NRT', firmsDays, queryEndDate)
   const liveNoaa20 = useFirms(location.lat, location.lon, 'VIIRS_NOAA20_NRT', firmsDays, queryEndDate)
@@ -1122,7 +1172,7 @@ export function App() {
   const moduleTitle = active === 'Field Situation' ? 'Field Situation' : active
   const dashboardPanel = <>
     <div className="panel-heading"><div><h2>Selected area briefing</h2><p>{location.name} · {location.lat.toFixed(3)}°, {location.lon.toFixed(3)}°</p></div><span className="status-tag">{firms.state === 'ready' ? 'OBSERVED' : 'CONTEXT'}</span></div>
-    {firms.state === 'ready' && peakObservation ? <div className="briefing-hotspot"><div className="hotspot-emblem"><Flame size={19} /></div><div><span>Highest reported FRP in loaded window</span><b>{peakObservation.frpMw} MW</b><small>{peakObservation.satellite ?? firms.source} · {peakObservation.acquiredAtUtc ? new Date(peakObservation.acquiredAtUtc).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'acquisition time unavailable'}</small></div></div> : <div className="dashboard-briefing-state"><Satellite size={18} /><div><b>{firms.state === 'ready' ? 'No detections returned for this request' : firms.state === 'loading' ? 'Requesting satellite observations' : firms.state === 'error' ? 'Satellite request unavailable' : firms.configured === false ? 'NASA FIRMS key not configured' : 'Satellite observations not loaded'}</b><span>{firms.state === 'ready' ? 'This source and window returned no records; that does not establish that no fire is present.' : firms.state === 'error' ? firms.message : firms.configured === false ? 'The server needs FIRMS_MAP_KEY in its local environment before it can request observations.' : 'Load the selected NASA FIRMS product to summarize observed thermal anomalies.'}</span>{firms.state !== 'loading' && <button className="text-button" onClick={() => void firms.load()}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}</div></div>}
+    {firms.state === 'ready' && peakObservation ? <div className="briefing-hotspot"><div className="hotspot-emblem"><Flame size={19} /></div><div><span>Highest reported FRP in loaded window</span><b>{peakObservation.frpMw} MW</b><small>{peakObservation.satellite ?? firms.source} · {peakObservation.acquiredAtUtc ? new Date(peakObservation.acquiredAtUtc).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'acquisition time unavailable'}</small></div></div> : <div className="dashboard-briefing-state"><Satellite size={18} /><div><b>{firms.state === 'ready' ? 'No detections returned for this request' : firms.state === 'loading' ? 'Requesting satellite observations' : firms.state === 'error' ? 'Satellite request unavailable' : firms.configured === false && !firms.publicNrtSupported ? 'NASA FIRMS key not configured' : 'Satellite observations not loaded'}</b><span>{firms.state === 'ready' ? 'This source and window returned no records; that does not establish that no fire is present.' : firms.state === 'error' ? firms.message : firms.configured === false && firms.publicNrtSupported ? 'Recent MODIS, NOAA-20 and NOAA-21 data can use NASA’s public Canada feed; historical queries require the server key.' : firms.configured === false ? 'The server needs FIRMS_MAP_KEY in its local environment before it can request observations.' : 'Load the selected NASA FIRMS product to summarize observed thermal anomalies.'}</span>{firms.state !== 'loading' && <button className="text-button" onClick={() => void firms.load()}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}</div></div>}
     <div className="dashboard-weather-heading"><span>FIELD CONDITIONS</span><button className="icon-button" aria-label="Refresh weather" onClick={retry}><RefreshCw size={14} /></button></div>
     {state === 'loading' && <div className="data-state"><span className="spinner" /> Loading weather observations…</div>}
     {state === 'error' && <div className="error-box"><AlertTriangle size={17} /><div><strong>Weather unavailable</strong><p>Check your connection, then retry.</p><button className="text-button" onClick={retry}>Retry weather request</button></div></div>}
@@ -1130,7 +1180,7 @@ export function App() {
       <div className="weather-primary"><div className="wind-glyph" style={{ transform: `rotate(${directionTo}deg)` }}><Wind size={25} /></div><div className="wind-value">{Math.round(displayWind)} <small>km/h</small><span>Blowing toward {windDirectionLabel(directionTo ?? 0)} · gusts {Math.round(weather.gusts)} km/h</span></div></div>
       <div className="weather-grid"><div className="weather-metric"><span><CloudRain size={15} /> Precipitation</span><b>{weather.precipitation.toFixed(1)} <small>mm</small></b><small>selected hour</small></div><div className="weather-metric"><span><Activity size={15} /> Temperature</span><b>{weather.temperature.toFixed(1)} <small>°C</small></b><small>2 m above ground</small></div></div>
       <div className="weather-grid"><div className="weather-metric"><span><Activity size={15} /> Relative humidity</span><b>{Math.round(weather.humidity)} <small>%</small></b><small>2 m above ground</small></div><div className="weather-metric"><span><Wind size={15} /> Wind gust</span><b>{Math.round(weather.gusts)} <small>km/h</small></b><small>10 m above ground</small></div></div>
-      <div className={`wind-field-state ${windField.state}`}><span className="wind-state-mark"><Wind size={14} /></span><div><b>{windField.state === 'ready' ? `${windField.nodes.length} forecast points feeding the map` : windField.state === 'loading' ? 'Building the local wind field…' : 'Wind field unavailable'}</b><small>{windField.state === 'ready' ? `Field interpolated for ${new Date(weather.time).toISOString().slice(0, 16).replace('T', ' ')} UTC; particles show flow, not travel time` : windField.state === 'error' ? 'Map particles are paused because grid data is unavailable.' : 'Fetching hourly speed and direction across the map extent.'}</small></div></div>
+      <div className={`wind-field-state ${windField.state}`}><span className="wind-state-mark"><Wind size={14} /></span><div><b>{windField.state === 'ready' ? `${windField.nodes.length} forecast points feeding the visible map` : windField.state === 'loading' ? windField.nodes.length ? 'Updating the wind grid for this view…' : 'Building the local wind field…' : windField.nodes.length ? 'Refresh failed · previous wind grid retained' : 'Wind field unavailable'}</b><small>{windField.state === 'ready' ? `25 forecast points interpolated for the selected map extent and ${new Date(weather.time).toISOString().slice(0, 16).replace('T', ' ')} UTC; particles show direction and relative speed, not travel time` : windField.state === 'error' ? windField.nodes.length ? `${windField.error ?? 'Wind service unavailable'} · last grid retrieved ${windField.retrievedAt ? new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'time unknown'}` : 'No cached grid is available for this view. Check the connection, then retry.' : windField.nodes.length ? `Showing the last retrieved grid${windField.retrievedAt ? ` from ${new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : ''} while the settled map extent loads.` : 'Fetching hourly speed and direction across the map extent.'}</small></div></div>
       <div className="source-note"><Clock3 size={14} /><span>Valid {new Date(weather.time).toLocaleString('en-CA', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC · Retrieved {retrievedAt ? new Date(retrievedAt).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' }) : '—'} UTC · Open-Meteo</span></div>
     </>}
     <div className="important-note"><Flame size={15} /><span>Satellite thermal detections are not confirmed fires. No historical baseline, incident perimeter or suppression status is available here.</span></div>
@@ -1143,13 +1193,13 @@ export function App() {
       <div><CloudRain size={15} /><span>Hourly precipitation</span><b>{weather ? `${weather.precipitation.toFixed(1)} mm` : 'Unavailable'}</b><small>{weather ? 'Selected forecast hour' : 'Forecast not available'}</small></div>
       <div><Activity size={15} /><span>Relative humidity</span><b>{weather ? `${Math.round(weather.humidity)}%` : 'Unavailable'}</b><small>Open-Meteo · 2 m</small></div>
     </div>
-    <div className="field-mobile-source-status"><span className={`field-mobile-state-dot ${firms.state}`} /><div><b>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} FIRMS observations returned` : firms.state === 'loading' ? 'Requesting satellite observations' : firms.configured === false ? 'NASA FIRMS key not configured' : firms.state === 'error' ? 'Satellite request unavailable' : 'Satellite observations not loaded'}</b><small>{firms.state === 'ready' ? `${firms.source} · ${firms.queryRange?.start ?? '—'} to ${firms.queryRange?.end ?? '—'} UTC` : firms.configured === false ? 'Map observations need a server key.' : 'Thermal detections are not confirmed incidents.'}</small></div></div>
+    <div className="field-mobile-source-status"><span className={`field-mobile-state-dot ${firms.state}`} /><div><b>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} FIRMS observations returned` : firms.state === 'loading' ? 'Requesting satellite observations' : firms.configured === false && !firms.publicNrtSupported ? 'NASA FIRMS key not configured' : firms.state === 'error' ? 'Satellite request unavailable' : firms.publicNrtSupported && !firms.configured ? 'Public recent FIRMS feed available' : 'Satellite observations not loaded'}</b><small>{firms.state === 'ready' ? `${firms.source} · ${firms.accessMode === 'public-nrt-canada-csv' ? 'public Canada feed · latest 7 days' : 'NASA area API'} · ${firms.queryRange?.start ?? '—'} to ${firms.queryRange?.end ?? '—'} UTC` : firms.configured === false && !firms.publicNrtSupported ? 'Map observations need a server key.' : firms.publicNrtSupported && !firms.configured ? 'MODIS / NOAA-20 / NOAA-21 · Canada · last 7 days. Older dates need a key.' : 'Thermal detections are not confirmed incidents.'}</small></div></div>
     <div className="field-mobile-refresh-row"><span>{windField.state === 'ready' ? `${windField.nodes.length} wind-grid points · ${retrievedAt ? new Date(retrievedAt).toISOString().slice(11, 16) : '—'} UTC` : `Wind forecast ${windField.state}`}</span><button className="primary-action" onClick={() => void firms.load(queryEndDate)} disabled={firms.state === 'loading'}><RefreshCw size={13} /> {firms.state === 'loading' ? 'Updating' : firms.state === 'error' ? 'Retry updates' : 'Refresh updates'}</button></div>
     <div className="important-note field-warning"><AlertTriangle size={15} /><span>Forecasts and satellite observations are context for awareness; they do not confirm an incident or provide operational instructions.</span></div>
   </section> : fieldMobileTab === 'Updates' ? <section className="field-mobile-panel" aria-label="Satellite updates">
     <header><div><h2>Satellite updates</h2><p>{firms.source.replaceAll('_', ' ')} · {firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</p></div><Satellite size={18} /></header>
     <div className="field-mobile-filters"><label htmlFor="field-mobile-product">Sensor product<select id="field-mobile-product" value={firmsProduct} onChange={(event) => setFirmsProduct(event.target.value as FirmsProduct)}>{firmsSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label htmlFor="field-mobile-date">End date · UTC<input id="field-mobile-date" type="date" max={currentUtcDate} value={queryEndDate ?? currentUtcDate} onChange={(event) => { const date = event.target.value || null; setQueryEndDate(date); if (date) void firms.load(date) }} /></label><label htmlFor="field-mobile-days">Window<select id="field-mobile-days" value={firmsDays} onChange={(event) => setFirmsDays(Number(event.target.value) as 1 | 2 | 3 | 5)}><option value={1}>1 day</option><option value={2}>2 days</option><option value={3}>3 days</option><option value={5}>5 days</option></select></label></div>
-    <div className={`field-mobile-source-status ${firms.state}`}><span className={`field-mobile-state-dot ${firms.state}`} /><div><b>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} observations returned` : firms.state === 'loading' ? 'Loading selected source' : firms.configured === false ? 'NASA FIRMS key not configured' : firms.state === 'error' ? 'Request unavailable' : 'No request for this area yet'}</b><small>{firms.state === 'ready' && firms.fetchedAt ? `Retrieved ${new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · ${firms.queryRange?.start ?? '—'} → ${firms.queryRange?.end ?? '—'}` : firms.message || 'Refresh to request the selected product and date window.'}</small></div></div>
+    <div className={`field-mobile-source-status ${firms.state}`}><span className={`field-mobile-state-dot ${firms.state}`} /><div><b>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} observations returned` : firms.state === 'loading' ? 'Loading selected source' : firms.configured === false && !firms.publicNrtSupported ? 'NASA FIRMS key not configured' : firms.state === 'error' ? 'Request unavailable' : firms.publicNrtSupported && !firms.configured ? 'Public recent FIRMS feed available' : 'No request for this area yet'}</b><small>{firms.state === 'ready' && firms.fetchedAt ? `Retrieved ${new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · ${firms.accessMode === 'public-nrt-canada-csv' ? 'public Canada feed · latest 7 days' : 'NASA area API'} · ${firms.queryRange?.start ?? '—'} → ${firms.queryRange?.end ?? '—'}` : firms.message || (firms.publicNrtSupported && !firms.configured ? 'MODIS / NOAA-20 / NOAA-21 · Canada · last 7 days. Historical requests need a key.' : 'Refresh to request the selected product and date window.')}</small></div></div>
     <button className="primary-action field-mobile-refresh" onClick={() => void firms.load(queryEndDate)} disabled={firms.state === 'loading'}><RefreshCw size={14} /> {firms.state === 'loading' ? 'Requesting updates…' : firms.state === 'error' ? 'Retry FIRMS request' : 'Refresh satellite updates'}</button>
     {firms.state === 'ready' && firms.observations.length > 0 ? <div className="field-mobile-observations">{firms.observations.slice(0, 20).map((observation) => <button key={observation.id} onClick={() => { selectObservation(observation); setActive('Live Map') }}><span><Flame size={14} /><b>{observation.source.replaceAll('_', ' ')}</b></span><strong>{observation.frpMw === null ? 'FRP —' : `${observation.frpMw} MW`}</strong><small>{observation.acquiredAtUtc ? `${new Date(observation.acquiredAtUtc).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'Time unavailable'} · {observation.latitude.toFixed(3)}°, {observation.longitude.toFixed(3)}°</small></button>)}</div> : firms.state === 'ready' ? <div className="field-mobile-empty"><Satellite size={17} /><span>No observations were returned for this request. That does not establish that no fire is present.</span></div> : firms.state === 'error' ? <div className="field-mobile-empty"><AlertTriangle size={17} /><span>{firms.message}</span></div> : <div className="field-mobile-empty"><Satellite size={17} /><span>Returned observations appear here with their source and UTC acquisition time.</span></div>}
   </section> : fieldMobileTab === 'Layers' ? <section className="field-mobile-panel" aria-label="Map layers and sources">
@@ -1189,7 +1239,7 @@ export function App() {
     <div className="terrain-attribution"><b>Source & attribution</b><span>Mapzen Terrain Tiles · Terrarium RGB · Canadian terrain data © Open Government Licence — Canada</span><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
   </> : active === 'Data & Sources' ? <>
     <div className="panel-heading"><div><h2>Data & provenance</h2><p>Sources currently used in this view</p></div><Database size={18} /></div>
-    <div className="source-card"><div><Wind size={16} /><b>Open-Meteo wind grid</b><span className={windField.state === 'ready' ? 'source-live' : 'source-missing'}>{windField.state === 'ready' ? 'CONNECTED' : windField.state.toUpperCase()}</span></div><p>{windField.state === 'ready' ? `${windField.nodes.length} grid locations interpolate hourly wind speed and direction into the animated map field.` : 'A 5 × 5 hourly forecast grid drives the map wind field.'}</p><small>25 locations · UTC · selected timeline hour · direction-aware vector interpolation</small><a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">API documentation <ChevronRight size={12} /></a></div>
+    <div className="source-card"><div><Wind size={16} /><b>Open-Meteo wind grid</b><span className={windField.state === 'ready' ? 'source-live' : 'source-missing'}>{windField.state === 'ready' ? 'CONNECTED' : windField.state === 'loading' && windField.nodes.length ? 'UPDATING VIEW' : windField.state.toUpperCase()}</span></div><p>{windField.state === 'ready' ? `${windField.nodes.length} forecast points interpolate hourly wind speed and direction across the visible map extent.` : windField.nodes.length ? 'The previous map grid stays visible while this camera extent refreshes.' : 'A 5 × 5 forecast grid drives the map wind field.'}</p><small>25 points · viewport-relative grid · UTC · selected timeline hour · vector interpolation · {windField.retrievedAt ? `retrieved ${new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'not yet retrieved'}</small><a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">API documentation <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Mapzen Terrain Tiles · Terrarium</b><span className={terrainAnalysis.state === 'ready' ? 'source-live' : 'source-missing'}>{terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state.toUpperCase()}</span></div><p>Bare-earth elevation tiles drive the 3D relief and the selected-point slope/aspect and transect samples.</p><small>Terrarium RGB · Canadian source attribution: Open Government Licence — Canada. Land cover and fuel classes remain unconnected.</small><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Open-Meteo Elevation</b><span className={elevation.state === 'ready' ? 'source-live' : 'source-missing'}>{elevation.state === 'ready' ? 'CONNECTED' : elevation.state.toUpperCase()}</span></div><p>{elevation.state === 'ready' ? `Point elevation: ${Math.round(elevation.value)} m.` : 'Point elevation lookup for selected coordinates.'}</p><small>One coordinate sample · metres above sea level</small></div>
     <div className="source-card source-disconnected"><div><Satellite size={16} /><b>NASA FIRMS · product coverage</b><span className={firmsCoverage.status === 'ready' ? 'source-live' : 'source-missing'}>{firmsCoverage.status === 'ready' ? `${firmsCoverage.products.length} PRODUCTS` : firmsCoverage.status === 'loading' ? 'CHECKING…' : firmsCoverage.status === 'key-missing' ? 'KEY NOT SET' : 'COVERAGE UNKNOWN'}</span></div><p>MODIS and VIIRS area requests run through the server-side proxy. The MAP_KEY is never sent to the browser. These date ranges describe product availability, not clear-sky coverage or guaranteed detections at this location.</p><button className="coverage-refresh" onClick={() => void firmsCoverage.load()} disabled={firmsCoverage.status === 'loading'}>{firmsCoverage.status === 'loading' ? <><span className="spinner" /> Checking product dates…</> : <><RefreshCw size={12} /> {firmsCoverage.status === 'ready' ? 'Refresh product coverage' : 'Check NASA product coverage'}</>}</button>{firmsCoverage.status === 'ready' ? <div className="firms-coverage-list">{firmsSources.map((item) => { const match = firmsCoverage.products.find((product) => product.product === item.id); return <div className="firms-coverage-row" key={item.id}><span>{item.label}</span><b>{match ? `${match.minDate} → ${match.maxDate}` : 'Not listed by FIRMS'}</b></div> })}{firmsCoverage.fetchedAtUtc && <small>Coverage retrieved {new Date(firmsCoverage.fetchedAtUtc).toISOString().slice(0, 16).replace('T', ' ')} UTC · cached for one hour</small>}</div> : <small>{firmsCoverage.status === 'key-missing' ? 'Set FIRMS_MAP_KEY in the server’s local .env file to query availability.' : firmsCoverage.status === 'error' ? firmsCoverage.message : 'Select Check NASA product coverage to query the current ranges reported by FIRMS.'}</small>}<small>{firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} normalized detections · ${firms.source}` : 'Coverage comes from NASA’s data_availability service; historical imports and per-location observation completeness are separate.'}</small><a href="https://firms.modaps.eosdis.nasa.gov/api/data_availability/" target="_blank" rel="noreferrer">FIRMS availability API <ChevronRight size={12} /></a></div>
@@ -1219,21 +1269,38 @@ export function App() {
       <header className="topbar">
         <button className="mobile-menu" onClick={() => setNavOpen(true)} aria-label="Open navigation"><Menu size={20} /></button>
         <div className="page-heading"><h1>{moduleTitle}</h1><span>Alberta fire intelligence</span></div>
-        <div className="global-controls"><label className="control location-control"><LocateFixed size={15} /><select aria-label="Select location" value={workspaceLocations.some((item) => item.name === location.name) ? location.name : '__map__'} onChange={(event) => { const next = workspaceLocations.find((item) => item.name === event.target.value); if (next) setLocation(next) }}>{workspaceLocations.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}{!workspaceLocations.some((item) => item.name === location.name) && <option value="__map__">{location.name}</option>}</select><ChevronDown size={14} /></label><label className="control product-control" title="NASA FIRMS sensor product"><Satellite size={15} /><select aria-label="NASA FIRMS sensor product" value={firmsProduct} onChange={(event) => setFirmsProduct(event.target.value as FirmsProduct)}>{firmsSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><ChevronDown size={14} /></label><label className="control observation-date-control" title="NASA FIRMS end date in UTC"><CalendarDays size={15} /><input type="date" aria-label="NASA FIRMS end date in UTC" max={new Date().toISOString().slice(0, 10)} value={queryEndDate ?? new Date().toISOString().slice(0, 10)} onChange={(event) => { const date = event.target.value || null; setQueryEndDate(date); if (date) { if (active === 'Compare') { void compareA.load(date); void compareB.load(date) } else if (active === 'Live Map') loadLiveSensors(date); else void firms.load(date) } }} /></label><label className="control date-control" title="NASA FIRMS observation window"><CalendarDays size={15} /><select aria-label="NASA FIRMS observation window" value={firmsDays} onChange={(event) => setFirmsDays(Number(event.target.value) as 1 | 2 | 3 | 5)}><option value={1}>1 UTC day</option><option value={2}>Last 2 UTC days</option><option value={3}>Last 3 UTC days</option><option value={5}>Last 5 UTC days</option></select><ChevronDown size={14} /></label><button className="help-button" aria-label="Help" title="Satellite detections are observations, not confirmed fires"><CircleHelp size={18} /></button></div>
+        <div className="global-controls"><label className="control location-control"><LocateFixed size={15} /><select aria-label="Select location" value={workspaceLocations.some((item) => item.name === location.name) ? location.name : '__map__'} onChange={(event) => { const next = workspaceLocations.find((item) => item.name === event.target.value); if (next) setLocation(next) }}>{workspaceLocations.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}{!workspaceLocations.some((item) => item.name === location.name) && <option value="__map__">{location.name}</option>}</select><ChevronDown size={14} /></label><label className="control product-control" title="NASA FIRMS sensor product"><Satellite size={15} /><select aria-label="NASA FIRMS sensor product" value={firmsProduct} onChange={(event) => setFirmsProduct(event.target.value as FirmsProduct)}>{firmsSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><ChevronDown size={14} /></label><label className="control observation-date-control" title="NASA FIRMS end date in UTC"><CalendarDays size={15} /><input type="date" aria-label="NASA FIRMS end date in UTC" max={new Date().toISOString().slice(0, 10)} value={queryEndDate ?? new Date().toISOString().slice(0, 10)} onChange={(event) => { const date = event.target.value || null; setQueryEndDate(date); if (date) { if (active === 'Compare') { void compareA.load(date); void compareB.load(date) } else if (active === 'Live Map') loadLiveSensors(date); else void firms.load(date) } }} /></label><label className="control date-control" title="NASA FIRMS observation window"><CalendarDays size={15} /><select aria-label="NASA FIRMS observation window" value={firmsDays} onChange={(event) => setFirmsDays(Number(event.target.value) as 1 | 2 | 3 | 5)}><option value={1}>1 UTC day</option><option value={2}>Last 2 UTC days</option><option value={3}>Last 3 UTC days</option><option value={5}>Last 5 UTC days</option></select><ChevronDown size={14} /></label><button className="help-button" aria-label="Open data and source help" title="Open Data & Sources for source definitions and limitations" onClick={() => setActive('Data & Sources')}><CircleHelp size={18} /></button></div>
       </header>
 
       <section className={`workspace ${active === 'Dashboard' ? 'dashboard-workspace' : active === 'Calendar' ? 'calendar-workspace' : active === 'Compare' ? 'compare-workspace' : active === 'Terrain' ? 'terrain-workspace' : ''} ${active === 'Field Situation' ? 'field-situation-workspace' : ''}`}>
         <div className="map-column">
           <div className="map-toolbar"><div className="map-title"><span className="eyebrow-icon"><Map size={15} /></span><div><strong>{location.name}</strong><small>{active === 'Scenario' ? 'Hypothetical inputs · no spread perimeter available' : active === 'Compare' ? 'MODIS + VIIRS detections · shared area and UTC window' : `${windField.state === 'ready' ? `${windField.nodes.length} point live wind field` : 'Live wind field loading'} · click map to inspect a location`}</small></div></div><div className="map-actions"><button className="map-mode-button" aria-pressed={isFieldMobile ? false : terrainEnabled} disabled={isFieldMobile} title={isFieldMobile ? 'Field Situation uses a lighter 2D map on mobile' : terrainEnabled ? 'Switch to flat 2D map' : 'Enable 3D terrain'} onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>{isFieldMobile ? '2D' : terrainEnabled ? '3D' : '2D'}</span></button><button className={`map-mode-button ${windVisible ? 'mode-active' : ''}`} aria-pressed={windVisible} title={windVisible ? 'Hide animated wind field' : 'Show animated wind field'} onClick={() => setWindVisible((value) => !value)}><Wind size={15} /><span>Wind</span></button><button className="icon-button" title="Search map" aria-label="Search map" onClick={() => document.querySelector<HTMLSelectElement>('.location-control select')?.focus()}><Search size={16} /></button><button className="icon-button" title="Map layers" aria-label="Map layers" onClick={() => setActive('Live Map')}><Layers3 size={16} /></button></div></div>
           {active === 'Compare' ? <div className={`compare-map-stage ${compareMode}`}>
-            <div className="compare-map-a"><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareA.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} syncGroup={compareMapSync.current} /></div>
-            <div className="compare-map-b" style={compareMode === 'swipe' ? { clipPath: `inset(0 0 0 ${compareSplit}%)` } : undefined}><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareB.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} syncGroup={compareMapSync.current} /></div>
+            <div className="compare-map-a"><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareA.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
+            <div className="compare-map-b" style={compareMode === 'swipe' ? { clipPath: `inset(0 0 0 ${compareSplit}%)` } : undefined}><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareB.observations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
             <div className="compare-mode-control" role="group" aria-label="Comparison map layout"><button className={compareMode === 'swipe' ? 'selected' : ''} onClick={() => setCompareMode('swipe')} aria-pressed={compareMode === 'swipe'}>↔ Swipe</button><button className={compareMode === 'side-by-side' ? 'selected' : ''} onClick={() => setCompareMode('side-by-side')} aria-pressed={compareMode === 'side-by-side'}>▥ Side-by-side</button></div>
             {compareMode === 'swipe' && <><div className="compare-swipe-divider" style={{ left: `${compareSplit}%` }} aria-hidden="true"><span>↔</span></div><input className="compare-swipe-input" type="range" min="15" max="85" value={compareSplit} onChange={(event) => setCompareSplit(Number(event.target.value))} aria-label="Adjust comparison divider" /></>}
             <div className="compare-map-chip modis"><i />{compareSourceA.replaceAll('_', ' ')} · {compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : compareA.state.toUpperCase()}</div><div className="compare-map-chip viirs"><i />{compareSourceB.replaceAll('_', ' ')} · {compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : compareB.state.toUpperCase()}</div>
-          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} />}
-          {active === 'Dashboard' && <section className="dashboard-map-summary" aria-label="Area activity summary"><div className="dashboard-map-kicker"><span>ALBERTA WILDFIRE SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'SOURCE LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false ? 'KEY NOT SET' : 'NOT LOADED'}</div><small>{location.name} · {firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</small><div className="dashboard-detection-count"><span>{firms.state === 'ready' ? firms.observations.length.toLocaleString() : '—'}</span><div><b>Observed detections</b><small>{firms.state === 'ready' ? 'Satellite thermal anomalies' : firms.state === 'loading' ? 'Request in progress' : 'Not confirmed fires'}</small></div></div><div className="dashboard-product-line"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div>{weather && <div className="dashboard-condition-row"><div><Wind size={14} /><span>Wind</span><b>{Math.round(weather.windSpeed)} km/h</b></div><div><CloudRain size={14} /><span>Rain</span><b>{weather.precipitation.toFixed(1)} mm</b></div></div>}{firms.configured === false && <small className="dashboard-key-note">Set FIRMS_MAP_KEY in the server’s local environment to load NASA observations.</small>}<button className="dashboard-load-button" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Loading observations</> : <><RefreshCw size={13} /> {firms.state === 'error' ? 'Retry satellite data' : 'Load satellite data'}</>}</button>{firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC</small>}</section>}
-          {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false ? 'KEY NOT SET' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateQueried ? 'Not an incident count' : calendarWindowStart ? `${calendarWindowStart} → ${calendarWindowEnd}` : 'No query window loaded'}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load(calendarSelectedDate)}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the requested window is unknown, not a zero.</small></section>}
+          </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={windField.nodes} windTime={weather?.time} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} />}
+          {active === 'Dashboard' && <section className="dashboard-map-summary" aria-labelledby="dashboard-summary-title">
+            <header className="dashboard-summary-header">
+              <span className="dashboard-summary-emblem"><Flame size={16} /></span>
+              <div className="dashboard-summary-title"><span>AREA ACTIVITY</span><h2 id="dashboard-summary-title">Wildfire summary</h2></div>
+              <span className={`dashboard-status-pill ${firms.state === 'ready' ? 'ready' : firms.state === 'loading' ? 'loading' : firms.state === 'error' ? 'error' : firms.configured === false && firms.publicNrtSupported ? 'public' : firms.configured === false ? 'blocked' : 'idle'}`}><i />{firms.state === 'ready' ? 'Data loaded' : firms.state === 'loading' ? 'Loading' : firms.state === 'error' ? 'Unavailable' : firms.configured === false && firms.publicNrtSupported ? 'Public feed' : firms.configured === false ? 'Key needed' : 'Ready'}</span>
+            </header>
+            <div className="dashboard-summary-context"><Map size={13} /><b>{location.name}</b><i /><span>{firms.days} UTC {firms.days === 1 ? 'day' : 'days'}</span></div>
+            <div className="dashboard-detection-count">
+              <span>{firms.state === 'ready' ? firms.observations.length.toLocaleString() : '—'}</span>
+              <div><b>Thermal detections</b><small>{firms.state === 'ready' ? 'Satellite anomalies · not confirmed fires' : firms.state === 'loading' ? 'Observations are being requested' : 'Load observations to see returned records'}</small></div>
+            </div>
+            <div className="dashboard-product-line"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div>
+            {weather && <div className="dashboard-condition-row"><div><Wind size={14} /><span>Wind</span><b>{Math.round(weather.windSpeed)} km/h</b></div><div><CloudRain size={14} /><span>Rain</span><b>{weather.precipitation.toFixed(1)} mm</b></div></div>}
+            {firms.configured === false && <p className="dashboard-key-note">{firms.publicNrtSupported ? 'Public feeds cover Canada and the latest 7 days. Older dates need a FIRMS key.' : 'FIRMS needs a server key before this source can be queried.'}</p>}
+            {firms.state === 'error' && <p className="dashboard-key-note error-note">The observation request failed. Retry to load this product and time window.</p>}
+            <button className="dashboard-load-button" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Loading observations</> : <><RefreshCw size={13} /> {firms.state === 'error' ? 'Retry observations' : firms.state === 'ready' ? 'Refresh observations' : 'Load observations'}</>}</button>
+            {firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · {firms.accessMode === 'public-nrt-canada-csv' ? 'public Canada feed · 7-day limit' : firms.accessMode === 'map-key-area-api' ? 'keyed area API' : 'access method unavailable'}</small>}
+          </section>}
+          {active === 'Calendar' && <section className="calendar-map-summary" aria-label="Calendar area summary"><div className="dashboard-map-kicker"><span>CALENDAR SUMMARY</span><span className={firms.state === 'ready' ? 'summary-dot summary-ready' : 'summary-dot'} />{firms.state === 'ready' ? 'WINDOW LOADED' : firms.state === 'loading' ? 'REQUESTING' : firms.configured === false && !firms.publicNrtSupported ? 'KEY NOT SET' : firms.publicNrtSupported && !firms.configured ? 'PUBLIC FEED' : 'NOT LOADED'}</div><b>{location.name}</b><small>{calendarSelectedDate} UTC · {firms.source.replaceAll('_', ' ')}</small><div className="calendar-summary-count"><span>{calendarDateQueried ? calendarSelectedRecords.length.toLocaleString() : '—'}</span><div><b>{calendarDateQueried ? 'Returned records' : 'Date not queried'}</b><small>{calendarDateQueried ? 'Not an incident count' : calendarWindowStart ? `${calendarWindowStart} → ${calendarWindowEnd}` : 'No query window loaded'}</small></div></div>{!calendarDateQueried && firms.state !== 'loading' && <button className="dashboard-load-button" onClick={() => void firms.load(calendarSelectedDate)}>{firms.state === 'error' ? 'Retry FIRMS request' : 'Load selected product'}</button>}<small className="calendar-summary-caveat">A day outside the requested window is unknown, not a zero.</small></section>}
           {active === 'Terrain' && <section className="terrain-map-controls"><header><Mountain size={16} /><div><b>Terrain layers</b><small>Map & local analysis</small></div></header><button className="terrain-map-layer" onClick={() => setTerrainEnabled((value) => !value)}><Mountain size={15} /><span>Elevation relief</span><b>{terrainEnabled ? '3D' : '2D'}</b></button><button className="terrain-map-layer" onClick={() => setTransectVisible((value) => !value)}><Activity size={15} /><span>Cross-section A—B</span><b>{transectVisible ? 'ON' : 'OFF'}</b></button><div className="terrain-map-layer static-layer"><Activity size={15} /><span>Local slope sample</span><b>{terrainAnalysis.state === 'ready' ? `${terrainAnalysis.slopeDegrees?.toFixed(1)}°` : terrainAnalysis.state.toUpperCase()}</b></div><div className="terrain-map-layer unavailable-layer"><Layers3 size={15} /><span>Land cover / fuels</span><b>NO SOURCE</b></div><div className="terrain-map-key"><i /> Cross-section · 80 km east–west</div></section>}
           <div className="map-legend"><span className="legend-wind"><i /> {windVisible ? `Animated wind field · ${windField.nodes.length || '—'} points` : 'Wind field hidden'}</span><span className="legend-boundary"><i /> Selected location</span><span className="legend-fire"><i className={(active === 'Compare' ? compareObservations.length > 0 : active === 'Live Map' ? filteredLiveObservations.length > 0 : firms.state === 'ready' && visibleObservations.length > 0) ? 'fire-loaded' : ''} /> {active === 'Compare' ? `MODIS ${compareA.state === 'ready' ? compareA.observations.length : '—'} · VIIRS ${compareB.state === 'ready' ? compareB.observations.length : '—'} returned` : active === 'Live Map' ? liveFeedState === 'ready' ? `${filteredLiveObservations.length} visible · clustered above zoom 9` : liveFeedState === 'loading' ? 'Requesting selected FIRMS sensors' : liveFeedState === 'error' ? 'Selected FIRMS sensors unavailable' : 'Load selected FIRMS sensors' : active === 'Calendar' ? calendarDateQueried ? `${visibleObservations.length} returned on ${calendarSelectedDate}` : firms.state === 'loading' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Requesting ${calendarSelectedDate}` : firms.state === 'error' && firms.queryRange && calendarSelectedDate >= firms.queryRange.start && calendarSelectedDate <= firms.queryRange.end ? `Request failed · ${calendarSelectedDate}` : 'Selected date not queried' : firms.state === 'ready' ? `${firms.observations.length} detections returned · ${firms.source}` : 'NASA FIRMS not loaded'}</span></div>
         </div>
@@ -1246,7 +1313,7 @@ export function App() {
         const Icon = tab === 'Map' ? Map : tab === 'Updates' ? Satellite : tab === 'Layers' ? Layers3 : ClipboardList
         return <button key={tab} type="button" className={fieldMobileTab === tab ? 'active' : ''} aria-current={fieldMobileTab === tab ? 'page' : undefined} onClick={() => setFieldMobileTab(tab)}><Icon size={18} /><span>{tab}</span></button>
       })}</nav>}
-      <footer className="app-footer"><span>Weather: Open-Meteo · basemap: OpenStreetMap · DEM: Mapzen Terrarium via AWS · FIRMS: {firms.configured === false ? 'server key not set' : firms.configured ? 'server key configured' : 'checking configuration'}</span><span>Wind field is an hourly forecast visualization, not a fire-spread prediction</span></footer>
+      <footer className="app-footer"><span>Weather: Open-Meteo · basemap: OpenStreetMap · DEM: Mapzen Terrarium via AWS · FIRMS: {firms.configured === false ? firms.publicNrtSupported ? 'public Canada NRT feed · no key · 7-day limit; history needs key' : 'server key not set' : firms.configured ? 'server key configured' : 'checking configuration'}</span><span>Wind field is an hourly forecast visualization, not a fire-spread prediction</span></footer>
     </main>
   </div>
 }

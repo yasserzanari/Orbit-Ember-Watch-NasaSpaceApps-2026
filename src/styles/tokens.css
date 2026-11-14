@@ -4,6 +4,12 @@
   --shell-surface: #0b1722;
   --panel-surface: #122330;
   --panel-raised: #172c39;
+  --glass-surface: rgba(11, 23, 34, .76);
+  --glass-surface-raised: rgba(18, 35, 48, .78);
+  --glass-border: rgba(148, 202, 212, .24);
+  --glass-highlight: rgba(231, 240, 243, .08);
+  --glass-shadow: 0 16px 36px rgba(0, 0, 0, .38);
+  --glass-blur: 16px;
   --border-subtle: #28404d;
   --text-primary: #e7f0f3;
   --text-secondary: #91a5ae;

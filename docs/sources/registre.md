@@ -1,6 +1,6 @@
 # Registre des sources
 
-Consultations recensées au **11 novembre 2026, heure de Toronto**. Une source repérée n’est pas forcément intégralement accessible. Aucune donnée satellite n’a été téléchargée dans ce travail.
+Consultations recensées au **14 novembre 2026, heure de Toronto**. Une source repérée n’est pas forcément intégralement accessible. Aucun fichier source satellite n’est conservé dans le dépôt; les flux publics décrits ci-dessous ont été vérifiés en mémoire.
 
 ## Défi et règles
 
@@ -21,6 +21,7 @@ Consultations recensées au **11 novembre 2026, heure de Toronto**. Une source r
 | S13 | [FIRMS Data Availability](https://firms.modaps.eosdis.nasa.gov/api/data_availability/) | Consultée : disponibilité par source ; pas d’exposition par cellule |
 | S14 | [Tutoriel NASA API](https://firms.modaps.eosdis.nasa.gov/content/academy/data_api/firms_api_use.html) | Piste consultée ; exemple et colonnes non exécutés |
 | S15 | [Avis de transition FIRMS](https://firms2.modaps.eosdis.nasa.gov/content/notifications/firms2/news.html) | Consulté : fin de livraison S-NPP annoncée au 2 novembre 2026 ; transition vers NOAA-20/21 |
+| S16 | [CSV publics FIRMS Canada — MODIS](https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Canada_7d.csv), [NOAA-20](https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Canada_7d.csv), [NOAA-21](https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-21-viirs-c2/csv/J2_VIIRS_C2_Canada_7d.csv) | Consultés le 14 novembre : réponses CSV publiques sans clé, plage observée du 7 au 14 novembre; NRT des sept derniers jours seulement, aucune preuve de couverture par cellule |
 
 ## Définitions scientifiques
 
