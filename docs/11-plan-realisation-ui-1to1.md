@@ -138,3 +138,9 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - L’animation est suspendue pendant les mouvements de la caméra. Le badge, la légende et le panneau météo distinguent `ready`, `loading` et `error`; une erreur conserve le dernier champ en mémoire pour diagnostic, sans l’afficher sur la nouvelle emprise.
 - Cette règle est commune au Dashboard, Live Map, Terrain, Scenario et aux deux cartes de Compare, car elles réutilisent le même composant `MapCanvas`.
 - Vérification de cette tranche : `npm run build` réussi, `git diff --check` propre. Reste à vérifier le parcours de pan/zoom et la parité visuelle dans un navigateur opérationnel.
+
+## Avancement — légende du vent sans collision avec les docks
+
+- La capture Scenario décodée et CRC-validée montrait la légende de vitesse au centre de la carte, partiellement cachée par le dock « Environmental inputs ». Le dock Terrain a la même implantation à gauche.
+- Le workspace Scenario reçoit maintenant une classe dédiée et les légendes Scenario/Terrain sont ancrées à droite de la carte, dans la zone libre; les règles de tablette et mobile ont des largeurs adaptées. Live Map conserve son ancrage après le dock gauche.
+- Vérification : build TypeScript/Vite et `git diff --check` réussis. Je n’ai pas généré de nouvelle capture : les tentatives Chrome de cette session échouent au démarrage du processus GPU.

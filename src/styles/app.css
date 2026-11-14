@@ -793,3 +793,32 @@
   .dashboard-condition-row>div { min-height: 48px; padding: 7px; }
   .dashboard-condition-row b { font-size: 13px; }
 }
+
+/* Reserve the left map dock for inputs; keep the wind scale in the open map area. */
+.scenario-workspace .wind-speed-legend,
+.terrain-workspace .wind-speed-legend {
+  right: 14px;
+  left: auto;
+  width: min(520px, calc(100% - 260px));
+  min-width: 240px;
+  transform: none;
+}
+@media (max-width: 1100px) and (min-width: 761px) {
+  .scenario-workspace .wind-speed-legend,
+  .terrain-workspace .wind-speed-legend {
+    width: min(480px, calc(100% - 236px));
+    min-width: 0;
+  }
+}
+@media (max-width: 760px) {
+  .scenario-workspace .wind-speed-legend,
+  .terrain-workspace .wind-speed-legend {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+    min-width: 0;
+    padding: 7px 8px 6px;
+    transform: none;
+  }
+}
