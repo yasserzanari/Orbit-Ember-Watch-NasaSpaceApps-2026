@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
+import { useWorkspaceState, workspaceLocations } from '../app/useWorkspaceState'
+import type { WorkspaceView } from '../app/useWorkspaceState'
 import {
   Activity, AlertTriangle, CalendarDays, ChevronDown, ChevronRight, CircleHelp,
   Clock3, CloudRain, Compass, Database, Flame, Layers3, LocateFixed, Map,
@@ -109,13 +111,6 @@ const navItems = [
   { label: 'Data & Sources', icon: Database },
   { label: 'Scenario', icon: Flame },
   { label: 'Field Situation', icon: Compass },
-]
-
-const locations = [
-  { name: 'Calgary, Alberta', lat: 51.0447, lon: -114.0719 },
-  { name: 'Edmonton, Alberta', lat: 53.5461, lon: -113.4938 },
-  { name: 'Jasper, Alberta', lat: 52.8737, lon: -118.0814 },
-  { name: 'Fort McMurray, Alberta', lat: 56.7268, lon: -111.3803 },
 ]
 
 function windDirectionLabel(degrees: number) {
@@ -582,12 +577,9 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
 }
 
 export function App() {
-  const [active, setActive] = useState('Dashboard')
-  const [location, setLocation] = useState(locations[0])
+  const workspace = useWorkspaceState()
+  const { view: active, setView: setActive, location, setLocation, windVisible, setWindVisible, terrainEnabled, setTerrainEnabled, selectedTime, setSelectedTime } = workspace
   const [navOpen, setNavOpen] = useState(false)
-  const [windVisible, setWindVisible] = useState(true)
-  const [terrainEnabled, setTerrainEnabled] = useState(true)
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [windOverride, setWindOverride] = useState<number | null>(null)
   const [horizon, setHorizon] = useState(6)
   const [elevation, setElevation] = useState<{ value: number; state: 'loading' | 'ready' | 'error' }>({ value: 0, state: 'loading' })
@@ -595,7 +587,7 @@ export function App() {
   const { hours, retrievedAt, state, retry } = useWeather(location.lat, location.lon)
   const windField = useWindField(location.lat, location.lon)
   const firms = useFirms(location.lat, location.lon)
-  useEffect(() => { setSelectedIndex(null); setWindOverride(null); setElevation({ value: 0, state: 'loading' }) }, [location])
+  useEffect(() => { setWindOverride(null); setElevation({ value: 0, state: 'loading' }) }, [location])
   useEffect(() => { setActiveDetection(null) }, [location, firms.source])
   useEffect(() => {
     const controller = new AbortController()
@@ -611,9 +603,15 @@ export function App() {
   }, [location])
   useEffect(() => {
     if (!hours.length) return
-    setSelectedIndex((current) => current === null ? Math.max(0, hours.findIndex((hour) => new Date(hour.time).getTime() >= Date.now())) : Math.min(current, hours.length - 1))
-  }, [hours])
-  const safeIndex = Math.min(Math.max(selectedIndex ?? 0, 0), Math.max(hours.length - 1, 0))
+    if (selectedTime && hours.some((hour) => hour.time === selectedTime)) return
+    const selectedTimestamp = selectedTime ? new Date(selectedTime).getTime() : NaN
+    const nextIndex = Number.isFinite(selectedTimestamp)
+      ? hours.reduce((closest, hour, index) => Math.abs(new Date(hour.time).getTime() - selectedTimestamp) < Math.abs(new Date(hours[closest].time).getTime() - selectedTimestamp) ? index : closest, 0)
+      : Math.max(0, hours.findIndex((hour) => new Date(hour.time).getTime() >= Date.now()))
+    setSelectedTime(hours[nextIndex]?.time ?? hours[0].time)
+  }, [hours, selectedTime, setSelectedTime])
+  const exactTimeIndex = selectedTime ? hours.findIndex((hour) => hour.time === selectedTime) : -1
+  const safeIndex = exactTimeIndex >= 0 ? exactTimeIndex : Math.min(Math.max(0, hours.findIndex((hour) => new Date(hour.time).getTime() >= Date.now())), Math.max(hours.length - 1, 0))
   const weather = hours[safeIndex] ?? null
   const directionTo = weather ? toWindDirection(weather.windDirectionFrom) : undefined
   const displayWind = windOverride ?? weather?.windSpeed ?? 0
@@ -688,7 +686,7 @@ export function App() {
     <aside className={`sidebar ${navOpen ? 'sidebar-open' : ''}`} aria-label="Primary navigation">
       <div className="brand"><span className="brand-orbit"><Flame size={19} /></span><span className="brand-name">Orbit Ember <b>Watch</b></span><button className="mobile-close" onClick={() => setNavOpen(false)} aria-label="Close navigation"><X size={18} /></button></div>
       <div className="nav-group-label">WORKSPACE</div>
-      <nav className="nav-list">{navItems.map(({ label, icon: Icon }) => <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => { setActive(label); setNavOpen(false) }} aria-current={active === label ? 'page' : undefined}>
+      <nav className="nav-list">{navItems.map(({ label, icon: Icon }) => <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => { setActive(label as WorkspaceView); setNavOpen(false) }} aria-current={active === label ? 'page' : undefined}>
         <Icon size={18} strokeWidth={1.8} /><span>{label}</span>{label === 'Scenario' && <span className="nav-soon">WHAT-IF</span>}
       </button>)}</nav>
       <div className="sidebar-bottom"><div className="source-mark"><Satellite size={16} /><span>Earth observation workspace</span></div><a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank" rel="noreferrer">NASA FIRMS <ChevronRight size={13} /></a></div>
@@ -699,7 +697,7 @@ export function App() {
       <header className="topbar">
         <button className="mobile-menu" onClick={() => setNavOpen(true)} aria-label="Open navigation"><Menu size={20} /></button>
         <div className="page-heading"><h1>{moduleTitle}</h1><span>Alberta fire intelligence</span></div>
-        <div className="global-controls"><label className="control location-control"><LocateFixed size={15} /><select aria-label="Select location" value={locations.some((item) => item.name === location.name) ? location.name : '__map__'} onChange={(event) => { const next = locations.find((item) => item.name === event.target.value); if (next) setLocation(next) }}>{locations.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}{!locations.some((item) => item.name === location.name) && <option value="__map__">{location.name}</option>}</select><ChevronDown size={14} /></label><div className="control date-control"><CalendarDays size={15} /><span>{weather ? new Date(weather.time).toLocaleString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' UTC' : 'Forecast loading'}</span></div><button className="help-button" aria-label="Help" title="Data notes: satellite detections are not confirmed fires"><CircleHelp size={18} /></button></div>
+        <div className="global-controls"><label className="control location-control"><LocateFixed size={15} /><select aria-label="Select location" value={workspaceLocations.some((item) => item.name === location.name) ? location.name : '__map__'} onChange={(event) => { const next = workspaceLocations.find((item) => item.name === event.target.value); if (next) setLocation(next) }}>{workspaceLocations.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}{!workspaceLocations.some((item) => item.name === location.name) && <option value="__map__">{location.name}</option>}</select><ChevronDown size={14} /></label><div className="control date-control"><CalendarDays size={15} /><span>{weather ? new Date(weather.time).toLocaleString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' UTC' : 'Forecast loading'}</span></div><button className="help-button" aria-label="Help" title="Data notes: satellite detections are not confirmed fires"><CircleHelp size={18} /></button></div>
       </header>
 
       <section className="workspace">
@@ -711,7 +709,7 @@ export function App() {
 
         <aside className="inspector">{moduleBody}</aside>
 
-        <div className="bottom-strip"><div className="timeline-title"><Activity size={16} /><div><b>Weather timeline</b><small>Hourly forecast · wind, rain, temperature</small></div></div><div className="timeline-track forecast-track" aria-label="Hourly forecast selector">{visibleHours.map((hour, index) => { const absoluteIndex = forecastStartIndex + index; return <button key={hour.time} className={`forecast-tick ${absoluteIndex === safeIndex ? 'selected' : ''}`} style={{ height: `${Math.max(12, Math.min(34, 10 + hour.windSpeed * 0.28))}px` }} onClick={() => setSelectedIndex(absoluteIndex)} title={`${new Date(hour.time).toISOString().slice(0, 16).replace('T', ' ')} UTC · wind ${Math.round(hour.windSpeed)} km/h · rain ${hour.precipitation.toFixed(1)} mm`} aria-label={`Select ${hour.time} UTC, wind ${Math.round(hour.windSpeed)} kilometers per hour`} /> })}{!hours.length && <span className="timeline-empty">Hourly forecast unavailable</span>}</div><div className="timeline-select"><label htmlFor="forecast-time">{weather ? new Date(weather.time).toISOString().slice(11, 16) + ' UTC' : '—'}</label><input id="forecast-time" type="range" min={forecastStartIndex} max={Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1)} value={Math.min(Math.max(safeIndex, forecastStartIndex), Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1))} onChange={(event) => setSelectedIndex(Number(event.target.value))} disabled={!hours.length} aria-label="Select forecast hour" /></div></div>
+        <div className="bottom-strip"><div className="timeline-title"><Activity size={16} /><div><b>Weather timeline</b><small>Hourly forecast · wind, rain, temperature</small></div></div><div className="timeline-track forecast-track" aria-label="Hourly forecast selector">{visibleHours.map((hour, index) => { const absoluteIndex = forecastStartIndex + index; return <button key={hour.time} className={`forecast-tick ${absoluteIndex === safeIndex ? 'selected' : ''}`} style={{ height: `${Math.max(12, Math.min(34, 10 + hour.windSpeed * 0.28))}px` }} onClick={() => setSelectedTime(hour.time)} title={`${new Date(hour.time).toISOString().slice(0, 16).replace('T', ' ')} UTC · wind ${Math.round(hour.windSpeed)} km/h · rain ${hour.precipitation.toFixed(1)} mm`} aria-label={`Select ${hour.time} UTC, wind ${Math.round(hour.windSpeed)} kilometers per hour`} /> })}{!hours.length && <span className="timeline-empty">Hourly forecast unavailable</span>}</div><div className="timeline-select"><label htmlFor="forecast-time">{weather ? new Date(weather.time).toISOString().slice(11, 16) + ' UTC' : '—'}</label><input id="forecast-time" type="range" min={forecastStartIndex} max={Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1)} value={Math.min(Math.max(safeIndex, forecastStartIndex), Math.max(forecastStartIndex, forecastStartIndex + hourCount - 1))} onChange={(event) => setSelectedTime(hours[Number(event.target.value)]?.time ?? null)} disabled={!hours.length} aria-label="Select forecast hour" /></div></div>
       </section>
       <footer className="app-footer"><span>Weather: Open-Meteo · basemap: OpenStreetMap · 3D terrain: AWS Terrain Tiles · FIRMS: not connected</span><span>Wind field is an hourly forecast visualization, not a fire-spread prediction</span></footer>
     </main>
