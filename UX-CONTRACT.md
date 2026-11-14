@@ -8,9 +8,9 @@ The application communicates satellite thermal detections, weather observations/
 
 - Canonical shell: shared header, persistent left navigation, shared map canvas, docked inspector, optional timeline.
 - Routes: Dashboard, Live Map, Calendar, Compare, Terrain, Data & Sources, Scenario, Mobile Situation.
-- AOI, date window, selected platforms, processing branch and selected time bin are app-level state; route changes preserve them. Shareable selections are serializable in URL parameters.
+- AOI, date window, selected platforms, processing branch, calendar day, selected observation and selected time bin are app-level state; route changes preserve them. `date` is the inclusive UTC end date sent to FIRMS; `day` is the independently selected calendar date, and old links with only `date` initialize both values from that date. `obs` contains a bounded, validated summary of the selected public FIRMS record so its inspector survives refresh and can be shared without re-querying NASA; restored link data is visibly marked as not revalidated against NASA.
 - Moving to another route adds a browser-history entry. Filter changes replace the current entry so Back/Forward traverses workspace routes without adding one entry per slider or layer change. `popstate` restores the route and serialized filters from that entry.
-- A selected observation or time bin stays linked across map, chart, calendar and inspector.
+- A selected observation or time bin stays linked across map, chart, calendar and inspector. Changing the AOI, FIRMS product, query window or selected calendar day clears an observation from a different date/source; route changes preserve it.
 - Mobile navigation uses a dismissible drawer; detail panels become accessible bottom sheets.
 - Data & Sources may query NASA FIRMS `data_availability` through the server proxy; show returned product date ranges with a retrieval timestamp, explain that dates do not prove coverage for an AOI, and preserve unknown/key-missing/error states.
 - Data & Sources reads validated local FIRMS manifest/QA pairs from the server; expose product, observed date range, accepted/rejected/duplicate counts and source hash without serving the private raw or normalized archive files.
@@ -20,7 +20,8 @@ The application communicates satellite thermal detections, weather observations/
 | Capability | Owner | Contract |
 |---|---|---|
 | Select/listbox | native HTML `<select>` for compact product and report categories; browser/OS owns popup | labels, native keyboard behavior, visible focus, app-owned form error text |
-| FIRMS observation window | shared topbar end-date + day-range control (native date input + native select; currently rendered by `App`) | Store the selected UTC end date in URL state; request the selected 1–5 day inclusive interval ending on that date. With no explicit end date, request the latest interval. Use the server-returned query bounds as authoritative; never interpret an unrequested or failed date as a valid zero. |
+| FIRMS observation window | shared topbar end-date + day-range control (native date input + native select; currently rendered by `App`) | Store the selected UTC end date as `date`; request the selected 1–5 day inclusive interval ending on it. With no explicit end date, request the latest interval. The calendar selection uses `day` and does not shift the query when it falls inside the loaded interval. A calendar day outside the current successful interval becomes the new query end date and triggers a load. Use server-returned bounds as authoritative; never interpret an unrequested or failed date as a valid zero. |
+| Selected observation | shared map marker → inspector | Serialize a validated `obs` summary with ID, source product, coordinates, time and available FIRMS attributes; malformed or oversized URL summaries are discarded. AOI/product/window changes clear it. |
 | AOI drawing | shared map interaction | keyboard alternative through coordinate/search inputs; preview geometry before apply |
 | Sensor selection | shared `SensorFilter` | each satellite separately selectable; unavailable period explains source range |
 | Chart | archived Recharts Chart Kit adapter | source and unit labels; no fixture rendered in product data views |

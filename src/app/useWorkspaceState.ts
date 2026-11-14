@@ -4,6 +4,24 @@ export type WorkspaceLocation = { name: string; lat: number; lon: number }
 export type WorkspaceView = 'Dashboard' | 'Live Map' | 'Calendar' | 'Compare' | 'Terrain' | 'Data & Sources' | 'Scenario' | 'Field Situation'
 export type FirmsProduct = 'VIIRS_NOAA20_NRT' | 'VIIRS_NOAA21_NRT' | 'VIIRS_SNPP_NRT' | 'MODIS_NRT' | 'VIIRS_NOAA20_SP' | 'VIIRS_NOAA21_SP' | 'VIIRS_SNPP_SP' | 'MODIS_SP'
 export type FirmsDayRange = 1 | 2 | 3 | 5
+export type WorkspaceObservationSelection = {
+  restoredFromLink: boolean
+  id: string
+  latitude: number
+  longitude: number
+  source: FirmsProduct
+  satellite: string | null
+  instrument: string | null
+  acquiredAtUtc: string | null
+  confidenceNative: string | null
+  frpMw: number | null
+  brightness4: number | null
+  brightness5: number | null
+  scanKm: number | null
+  trackKm: number | null
+  dayNight: string | null
+  productVersion: string | null
+}
 
 export const workspaceLocations: WorkspaceLocation[] = [
   { name: 'Calgary, Alberta', lat: 51.0447, lon: -114.0719 },
@@ -20,7 +38,9 @@ export type WorkspaceState = {
   view: WorkspaceView
   location: WorkspaceLocation
   selectedTime: string | null
-  selectedDate: string | null
+  queryEndDate: string | null
+  calendarDate: string | null
+  selectedObservation: WorkspaceObservationSelection | null
   firmsProduct: FirmsProduct
   compareProductA: FirmsProduct
   compareProductB: FirmsProduct
@@ -35,6 +55,46 @@ function validCoordinate(value: string | null, min: number, max: number) {
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null
 }
 
+function validUtcDay(value: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const date = new Date(`${value}T00:00:00Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : null
+}
+
+function validNullableText(value: unknown, maxLength = 80): string | null {
+  return typeof value === 'string' && value.length <= maxLength ? value : null
+}
+
+function parseObservation(value: string | null): WorkspaceObservationSelection | null {
+  if (!value || value.length > 1400) return null
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>
+    const source = parsed.source
+    const latitude = parsed.latitude
+    const longitude = parsed.longitude
+    if (typeof parsed.id !== 'string' || parsed.id.length < 1 || parsed.id.length > 180
+      || typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90
+      || typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
+      || typeof source !== 'string' || !firmsProducts.includes(source as FirmsProduct)) return null
+    const acquiredAtUtc = validNullableText(parsed.acquiredAtUtc, 40)
+    if (acquiredAtUtc && !Number.isFinite(Date.parse(acquiredAtUtc))) return null
+    const frpMw = parsed.frpMw === null ? null : typeof parsed.frpMw === 'number' && Number.isFinite(parsed.frpMw) && parsed.frpMw >= 0 ? parsed.frpMw : null
+    return {
+      restoredFromLink: true,
+      id: parsed.id, latitude, longitude, source: source as FirmsProduct,
+      satellite: validNullableText(parsed.satellite), instrument: validNullableText(parsed.instrument), acquiredAtUtc,
+      confidenceNative: validNullableText(parsed.confidenceNative), frpMw,
+      brightness4: typeof parsed.brightness4 === 'number' && Number.isFinite(parsed.brightness4) ? parsed.brightness4 : null,
+      brightness5: typeof parsed.brightness5 === 'number' && Number.isFinite(parsed.brightness5) ? parsed.brightness5 : null,
+      scanKm: typeof parsed.scanKm === 'number' && Number.isFinite(parsed.scanKm) && parsed.scanKm >= 0 ? parsed.scanKm : null,
+      trackKm: typeof parsed.trackKm === 'number' && Number.isFinite(parsed.trackKm) && parsed.trackKm >= 0 ? parsed.trackKm : null,
+      dayNight: validNullableText(parsed.dayNight, 8), productVersion: validNullableText(parsed.productVersion, 40),
+    }
+  } catch {
+    return null
+  }
+}
+
 function readWorkspaceState(): WorkspaceState {
   const params = new URLSearchParams(window.location.search)
   const viewParam = params.get('view') as WorkspaceView | null
@@ -42,7 +102,8 @@ function readWorkspaceState(): WorkspaceState {
   const lon = validCoordinate(params.get('lon'), -180, 180)
   const name = params.get('place')?.trim().slice(0, 80)
   const timestamp = params.get('time')
-  const dateParam = params.get('date')
+  const dateParam = validUtcDay(params.get('date'))
+  const calendarDateParam = validUtcDay(params.get('day'))
   const productParam = params.get('product') as FirmsProduct | null
   const compareAParam = params.get('compareA') as FirmsProduct | null
   const compareBParam = params.get('compareB') as FirmsProduct | null
@@ -50,8 +111,6 @@ function readWorkspaceState(): WorkspaceState {
   const includesTimezone = timestamp ? /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) : false
   const date = timestamp ? new Date(includesTimezone ? timestamp : `${timestamp}Z`) : null
   const selectedTime = date && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 16) : null
-  const parsedCalendarDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? new Date(`${dateParam}T00:00:00Z`) : null
-  const selectedDate = parsedCalendarDate && Number.isFinite(parsedCalendarDate.getTime()) && parsedCalendarDate.toISOString().slice(0, 10) === dateParam ? dateParam : null
   const knownLocation = workspaceLocations.find((item) => item.name === name)
   const location = knownLocation ?? (lat !== null && lon !== null
     ? { name: name || `Map point · ${lat.toFixed(3)}°, ${lon.toFixed(3)}°`, lat, lon }
@@ -61,7 +120,9 @@ function readWorkspaceState(): WorkspaceState {
     view: viewParam && views.includes(viewParam) ? viewParam : 'Dashboard',
     location,
     selectedTime,
-    selectedDate,
+    queryEndDate: dateParam,
+    calendarDate: calendarDateParam ?? dateParam,
+    selectedObservation: parseObservation(params.get('obs')),
     firmsProduct: productParam && firmsProducts.includes(productParam) ? productParam : firmsProducts[0],
     compareProductA: compareAParam && firmsProducts.includes(compareAParam) && compareAParam.startsWith('MODIS') ? compareAParam : 'MODIS_NRT',
     compareProductB: compareBParam && firmsProducts.includes(compareBParam) && compareBParam.startsWith('VIIRS') ? compareBParam : 'VIIRS_NOAA20_NRT',
@@ -79,8 +140,14 @@ function writeWorkspaceState(state: WorkspaceState, mode: 'push' | 'replace') {
   url.searchParams.set('place', state.location.name)
   if (state.selectedTime) url.searchParams.set('time', state.selectedTime)
   else url.searchParams.delete('time')
-  if (state.selectedDate) url.searchParams.set('date', state.selectedDate)
+  if (state.queryEndDate) url.searchParams.set('date', state.queryEndDate)
   else url.searchParams.delete('date')
+  if (state.calendarDate) url.searchParams.set('day', state.calendarDate)
+  else url.searchParams.delete('day')
+  if (state.selectedObservation) {
+    const { restoredFromLink: _restoredFromLink, ...shareableObservation } = state.selectedObservation
+    url.searchParams.set('obs', JSON.stringify(shareableObservation))
+  } else url.searchParams.delete('obs')
   url.searchParams.set('product', state.firmsProduct)
   url.searchParams.set('compareA', state.compareProductA)
   url.searchParams.set('compareB', state.compareProductB)
@@ -118,13 +185,15 @@ export function useWorkspaceState() {
   }, [state])
 
   const setView = useCallback((view: WorkspaceView) => setState((current) => ({ ...current, view })), [])
-  const setLocation = useCallback((location: WorkspaceLocation) => setState((current) => ({ ...current, location, selectedTime: null, selectedDate: null })), [])
+  const setLocation = useCallback((location: WorkspaceLocation) => setState((current) => ({ ...current, location, selectedTime: null, queryEndDate: null, calendarDate: null, selectedObservation: null })), [])
   const setSelectedTime = useCallback((selectedTime: string | null) => setState((current) => ({ ...current, selectedTime })), [])
-  const setSelectedDate = useCallback((selectedDate: string | null) => setState((current) => ({ ...current, selectedDate })), [])
-  const setFirmsProduct = useCallback((firmsProduct: FirmsProduct) => setState((current) => ({ ...current, firmsProduct })), [])
-  const setCompareProductA = useCallback((compareProductA: FirmsProduct) => setState((current) => ({ ...current, compareProductA })), [])
-  const setCompareProductB = useCallback((compareProductB: FirmsProduct) => setState((current) => ({ ...current, compareProductB })), [])
-  const setFirmsDays = useCallback((firmsDays: FirmsDayRange) => setState((current) => ({ ...current, firmsDays })), [])
+  const setQueryEndDate = useCallback((queryEndDate: string | null) => setState((current) => ({ ...current, queryEndDate, calendarDate: queryEndDate ?? current.calendarDate, selectedObservation: null })), [])
+  const setCalendarDate = useCallback((calendarDate: string | null) => setState((current) => ({ ...current, calendarDate, selectedObservation: current.selectedObservation?.acquiredAtUtc?.slice(0, 10) === calendarDate ? current.selectedObservation : null })), [])
+  const setSelectedObservation = useCallback((selectedObservation: WorkspaceObservationSelection | null) => setState((current) => ({ ...current, selectedObservation })), [])
+  const setFirmsProduct = useCallback((firmsProduct: FirmsProduct) => setState((current) => ({ ...current, firmsProduct, selectedObservation: null })), [])
+  const setCompareProductA = useCallback((compareProductA: FirmsProduct) => setState((current) => ({ ...current, compareProductA, selectedObservation: null })), [])
+  const setCompareProductB = useCallback((compareProductB: FirmsProduct) => setState((current) => ({ ...current, compareProductB, selectedObservation: null })), [])
+  const setFirmsDays = useCallback((firmsDays: FirmsDayRange) => setState((current) => ({ ...current, firmsDays, selectedObservation: null })), [])
   const setWindVisible = useCallback((windVisible: boolean | ((current: boolean) => boolean)) => setState((current) => ({
     ...current,
     windVisible: typeof windVisible === 'function' ? windVisible(current.windVisible) : windVisible,
@@ -136,6 +205,6 @@ export function useWorkspaceState() {
 
   return {
     ...state,
-    setView, setLocation, setSelectedTime, setSelectedDate, setFirmsProduct, setCompareProductA, setCompareProductB, setFirmsDays, setWindVisible, setTerrainEnabled,
+    setView, setLocation, setSelectedTime, setQueryEndDate, setCalendarDate, setSelectedObservation, setFirmsProduct, setCompareProductA, setCompareProductB, setFirmsDays, setWindVisible, setTerrainEnabled,
   }
 }
