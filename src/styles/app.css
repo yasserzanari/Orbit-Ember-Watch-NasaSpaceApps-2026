@@ -875,3 +875,28 @@
   .calendar-board.cwfis-open .cwfis-series-row>div { gap: 2px; }
   .calendar-board.cwfis-open .cwfis-day-labels { margin-right: 37px; padding-left: 114px; }
 }
+
+/* Calendar and terrain map docks share the same restrained glass material. */
+.calendar-map-summary,
+.terrain-map-controls {
+  border-color: rgba(168,223,228,.3);
+  background-image:
+    radial-gradient(ellipse at 0 0, rgba(69,213,211,.1), transparent 55%),
+    linear-gradient(140deg, rgba(235,252,255,.07), transparent 44%),
+    linear-gradient(145deg, rgba(18,39,51,.82), rgba(7,18,28,.76));
+  box-shadow: 0 18px 44px rgba(0,0,0,.4), 0 0 24px rgba(37,210,216,.055), inset 0 1px 0 rgba(242,255,255,.13);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+.calendar-summary-count,
+.terrain-map-layer,
+.terrain-map-controls .terrain-map-key {
+  border-color: rgba(168,213,220,.18);
+  background-color: rgba(7,19,28,.43);
+  box-shadow: inset 0 1px 0 rgba(235,251,252,.045);
+}
+.terrain-map-layer:hover:not(.static-layer):not(.unavailable-layer) {
+  border-color: rgba(37,210,216,.42);
+  background-color: rgba(37,210,216,.08);
+}
+.terrain-map-controls>header { border-bottom-color: rgba(167,220,226,.18); }
