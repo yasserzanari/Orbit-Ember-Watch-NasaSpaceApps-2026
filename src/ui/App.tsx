@@ -26,6 +26,7 @@ type Weather = {
 type ForecastHour = Weather
 type FieldMobileTab = 'Map' | 'Updates' | 'Layers' | 'Report'
 type LiveSensorKey = 'modis-terra' | 'modis-aqua' | 'noaa20' | 'noaa21'
+type DataSourceId = 'firms' | 'wind' | 'terrain' | 'elevation' | 'archive'
 type WindSample = { time: string; speedKmh: number | null; directionFrom: number | null }
 type WindNode = { id: string; latitude: number; longitude: number; samples: WindSample[] }
 type WindFieldState = { state: 'loading' | 'ready' | 'error'; nodes: WindNode[]; retrievedAt: string | null; error?: string }
@@ -1059,6 +1060,49 @@ function SourcePipeline({ observations, feed, archiveCatalog }: { observations: 
   </section>
 }
 
+function SourceFocusCard({ selected, location, feed, windField, windTime, terrainAnalysis, elevation, archiveCatalog }: { selected: DataSourceId; location: MapPoint; feed: ReturnType<typeof useFirms>; windField: WindFieldState; windTime?: string; terrainAnalysis: TerrainAnalysis; elevation: { value: number; state: 'loading' | 'ready' | 'error' }; archiveCatalog: FirmsArchiveState }) {
+  const product = firmsSources.find((item) => item.id === feed.source)
+  const selectedArchiveRows = archiveCatalog.archives.filter((archive) => archive.product === feed.source)
+  const details: Record<DataSourceId, { title: string; subtitle: string; status: string; facts: Array<[string, string]>; note: string }> = {
+    firms: {
+      title: 'NASA FIRMS active fire', subtitle: product?.label ?? feed.source,
+      status: feed.state === 'ready' ? `${feed.observations.length.toLocaleString()} ROWS` : feed.state === 'loading' ? 'REQUESTING' : feed.state === 'error' ? 'UNAVAILABLE' : feed.configured === false && !feed.publicFeedAvailable ? 'KEY NOT SET' : 'NOT LOADED',
+      facts: [['Product', 'Satellite thermal anomaly detections'], ['Coverage period', feed.queryRange ? `${feed.queryRange.start} → ${feed.queryRange.end} UTC` : 'Not queried'], ['Pixel size', feed.source.startsWith('VIIRS') ? '375 m nominal (VIIRS)' : '1 km nominal (MODIS)'], ['Access', firmsAccessLabel(feed.accessMode)], ['Returned rows', feed.state === 'ready' ? feed.observations.length.toLocaleString() : '—']],
+      note: 'An observation is not a confirmed incident or unique fire. Missing rows do not establish absence.',
+    },
+    wind: {
+      title: 'Open-Meteo wind field', subtitle: 'Hourly forecast · 10 m above ground',
+      status: windField.state === 'ready' ? `${windField.nodes.length} GRID POINTS` : windField.state.toUpperCase(),
+      facts: [['Variables', 'Wind speed and direction'], ['Valid time', windTime ? `${windTime.slice(0, 16).replace('T', ' ')} UTC` : 'Not available'], ['Grid', `25 requested · ${windField.nodes.length} valid nodes · viewport-relative`], ['Retrieved', windField.retrievedAt ? `${new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'Not retrieved'], ['Units', 'km/h · direction toward on map']],
+      note: 'This layer shows forecast wind; it does not model fire movement or spread.',
+    },
+    terrain: {
+      title: 'Mapzen Terrarium elevation', subtitle: 'AWS terrain RGB tiles · zoom 12 samples',
+      status: terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state.toUpperCase(),
+      facts: [['Layer', 'Bare-earth elevation relief'], ['Selected elevation', terrainAnalysis.elevationM === null ? '—' : `${Math.round(terrainAnalysis.elevationM).toLocaleString()} m`], ['Point spacing', terrainAnalysis.sampleSpacingM ? `~${Math.round(terrainAnalysis.sampleSpacingM)} m` : 'Not sampled'], ['A—B profile', terrainAnalysis.state === 'ready' ? `${terrainAnalysis.profile.length} samples · ${Math.round(terrainAnalysis.profile.at(-1)?.distanceKm ?? 0)} km` : 'Not sampled'], ['Other rasters', 'Fuel, canopy and water unavailable']],
+      note: 'A local elevation derivative is not a validated regional fuel, soil or fire behavior layer.',
+    },
+    elevation: {
+      title: 'Open-Meteo elevation', subtitle: 'Independent point sample',
+      status: elevation.state.toUpperCase(),
+      facts: [['Selected coordinate', `${location.lat.toFixed(4)}°, ${location.lon.toFixed(4)}°`], ['Elevation', elevation.state === 'ready' ? `${Math.round(elevation.value).toLocaleString()} m` : '—'], ['Purpose', 'Cross-check against Terrarium sample'], ['Resolution', 'Single coordinate response'], ['Source', 'Open-Meteo Elevation API']],
+      note: 'A point cross-check does not replace the DEM or provide a continuous elevation surface.',
+    },
+    archive: {
+      title: 'Local FIRMS archive', subtitle: 'Workspace manifests · local files stay private',
+      status: archiveCatalog.status === 'ready' ? `${archiveCatalog.archives.length} IMPORTS` : archiveCatalog.status.toUpperCase(),
+      facts: [['Matching product', selectedArchiveRows.length ? feed.source : 'No import for selected product'], ['Accepted rows', selectedArchiveRows.length ? selectedArchiveRows.reduce((sum, item) => sum + item.rowsAccepted, 0).toLocaleString() : '—'], ['Date range', selectedArchiveRows.length ? `${selectedArchiveRows.map((item) => item.minDateUtc).sort()[0]} → ${selectedArchiveRows.map((item) => item.maxDateUtc).sort().at(-1)}` : 'Unknown'], ['Manifest QA', selectedArchiveRows.length ? [...new Set(selectedArchiveRows.map((item) => item.qaStatus))].join(', ') : 'Not available'], ['Catalog', archiveCatalog.status === 'ready' ? 'Read from local workspace' : 'Open catalog to inspect']],
+      note: 'An empty archive catalog or missing row does not mean the area had no fire activity.',
+    },
+  }
+  const detail = details[selected]
+  return <section className="source-focus-card" aria-label={`${detail.title} dataset details`}>
+    <header><div><span>SELECTED DATASET</span><h3>{detail.title}</h3><small>{detail.subtitle}</small></div><b className={`source-focus-status ${selected}`}>{detail.status}</b></header>
+    <dl>{detail.facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+    <p>{detail.note}</p>
+  </section>
+}
+
 function TerrainCrossSection({ analysis }: { analysis: TerrainAnalysis }) {
   const values = analysis.profile.map((point) => point.elevationM)
   const minimum = analysis.minElevationM ?? 0
@@ -1265,6 +1309,9 @@ export function App() {
   const [fieldMobileTab, setFieldMobileTab] = useState<FieldMobileTab>('Map')
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const [archiveCatalogExpanded, setArchiveCatalogExpanded] = useState(false)
+  const [selectedDataSource, setSelectedDataSource] = useState<DataSourceId>('firms')
+  const [sourceHotspotsVisible, setSourceHotspotsVisible] = useState(true)
+  const [sourceDockCollapsed, setSourceDockCollapsed] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const [liveSensors, setLiveSensors] = useState<LiveSensorKey[]>(['modis-terra', 'modis-aqua', 'noaa20', 'noaa21'])
   const [liveConfidence, setLiveConfidence] = useState<string[]>(['low', 'nominal', 'high', 'unknown'])
   const [liveDayNight, setLiveDayNight] = useState<string[]>(['day', 'night', 'unknown'])
@@ -1446,7 +1493,7 @@ export function App() {
   }, [active, liveActivityDayKey, livePlaybackRunning])
   const visibleObservations = active === 'Calendar'
     ? calendarDateQueried ? calendarSelectedRecords : []
-    : active === 'Compare' ? compareObservations : active === 'Live Map' ? liveHotspotsVisible ? filteredLiveObservations.filter((observation) => !selectedLiveDate || observation.acquiredAtUtc?.slice(0, 10) === selectedLiveDate) : [] : firms.observations
+    : active === 'Compare' ? compareObservations : active === 'Live Map' ? liveHotspotsVisible ? filteredLiveObservations.filter((observation) => !selectedLiveDate || observation.acquiredAtUtc?.slice(0, 10) === selectedLiveDate) : [] : active === 'Data & Sources' ? sourceHotspotsVisible ? firms.observations : [] : firms.observations
   const selectCalendarDate = (date: string) => {
     setCalendarDate(date)
     const outsideLoadedWindow = !firms.queryRange || date < firms.queryRange.start || date > firms.queryRange.end
@@ -1542,6 +1589,7 @@ export function App() {
     <div className="terrain-attribution"><b>Source & attribution</b><span>Mapzen Terrain Tiles · Terrarium RGB · Canadian terrain data © Open Government Licence — Canada</span><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
   </> : active === 'Data & Sources' ? <>
     <div className="panel-heading"><div><h2>Data & provenance</h2><p>Sources currently used in this view</p></div><Database size={18} /></div>
+    <SourceFocusCard selected={selectedDataSource} location={location} feed={firms} windField={windField} windTime={weather?.time} terrainAnalysis={terrainAnalysis} elevation={elevation} archiveCatalog={firmsArchiveCatalog} />
     <div className="source-card"><div><Wind size={16} /><b>Open-Meteo wind grid</b><span className={windField.state === 'ready' ? 'source-live' : 'source-missing'}>{windField.state === 'ready' ? 'CONNECTED' : windField.state === 'loading' && windField.nodes.length ? 'UPDATING VIEW' : windField.state.toUpperCase()}</span></div><p>{windField.state === 'ready' ? `${windField.nodes.length} forecast points interpolate hourly wind speed and direction across the visible map extent.` : windField.nodes.length ? 'The previous map grid stays visible while this camera extent refreshes.' : 'A 5 × 5 forecast grid drives the map wind field.'}</p><small>25 points · viewport-relative grid · UTC · selected timeline hour · vector interpolation · {windField.retrievedAt ? `retrieved ${new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'not yet retrieved'}</small><a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">API documentation <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Mapzen Terrain Tiles · Terrarium</b><span className={terrainAnalysis.state === 'ready' ? 'source-live' : 'source-missing'}>{terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state.toUpperCase()}</span></div><p>Bare-earth elevation tiles drive the 3D relief and the selected-point slope/aspect and transect samples.</p><small>Terrarium RGB · Canadian source attribution: Open Government Licence — Canada. Land cover and fuel classes remain unconnected.</small><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Open-Meteo Elevation</b><span className={elevation.state === 'ready' ? 'source-live' : 'source-missing'}>{elevation.state === 'ready' ? 'CONNECTED' : elevation.state.toUpperCase()}</span></div><p>{elevation.state === 'ready' ? `Point elevation: ${Math.round(elevation.value)} m.` : 'Point elevation lookup for selected coordinates.'}</p><small>One coordinate sample · metres above sea level</small></div>
@@ -1594,6 +1642,22 @@ export function App() {
             <div className="compare-map-chip modis"><i />{compareSourceA.replaceAll('_', ' ')} · {compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : compareA.state.toUpperCase()}</div><div className="compare-map-chip viirs"><i />{compareSourceB.replaceAll('_', ' ')} · {compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : compareB.state.toUpperCase()}</div>
           </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={active === 'Scenario' ? scenarioWindNodes : windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} terrainTransectSelecting={active === 'Terrain' && terrainTransectPointTarget !== null} onTerrainTransectPoint={selectTerrainTransectPoint} />}
           {active === 'Live Map' && liveMapDock}
+          {active === 'Data & Sources' && <section className={`source-catalog-dock ${sourceDockCollapsed ? 'collapsed' : ''}`} aria-label="Source catalog and map layers">
+            <button type="button" className="source-catalog-heading" aria-expanded={!sourceDockCollapsed} onClick={() => setSourceDockCollapsed((value) => !value)}><span><Layers3 size={15} /></span><div><b>Source catalog</b><small>Choose a dataset to inspect</small></div><ChevronDown size={14} /></button>
+            <div className="source-catalog-list">{[
+              { id: 'firms' as const, icon: Satellite, label: 'NASA FIRMS', detail: firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source, state: firms.state === 'ready' ? `${firms.observations.length.toLocaleString()} rows` : firms.state === 'loading' ? 'REQUESTING' : firms.state === 'error' ? 'ERROR' : 'NOT LOADED' },
+              { id: 'wind' as const, icon: Wind, label: 'Open-Meteo wind', detail: 'Hourly forecast · 10 m', state: windField.state === 'ready' ? `${windField.nodes.length} points` : windField.state.toUpperCase() },
+              { id: 'terrain' as const, icon: Mountain, label: 'Terrarium DEM', detail: 'Elevation & relief', state: terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state.toUpperCase() },
+              { id: 'elevation' as const, icon: Mountain, label: 'Open-Meteo elevation', detail: 'Selected point cross-check', state: elevation.state.toUpperCase() },
+              { id: 'archive' as const, icon: Database, label: 'Local FIRMS archive', detail: 'Workspace manifests', state: firmsArchiveCatalog.status === 'ready' ? `${firmsArchiveCatalog.archives.length} imports` : firmsArchiveCatalog.status.toUpperCase() },
+            ].map(({ id, icon: Icon, label, detail, state }) => <button type="button" key={id} className={`source-catalog-item ${selectedDataSource === id ? 'selected' : ''}`} aria-pressed={selectedDataSource === id} onClick={() => setSelectedDataSource(id)}><span className="source-catalog-icon"><Icon size={15} /></span><span className="source-catalog-copy"><b>{label}</b><small>{detail}</small></span><span className="source-catalog-state">{state}</span><ChevronRight size={14} /></button>)}</div>
+            <div className="source-catalog-layers"><b>Map layers</b>
+              <label><input type="checkbox" checked={sourceHotspotsVisible} onChange={(event) => setSourceHotspotsVisible(event.target.checked)} /><Flame size={14} /><span>Hotspots</span><small>{firms.observations.length.toLocaleString()}</small></label>
+              <label><input type="checkbox" checked={windVisible} onChange={(event) => setWindVisible(event.target.checked)} /><Wind size={14} /><span>Wind field</span><small>{windField.state === 'ready' ? 'READY' : windField.state.toUpperCase()}</small></label>
+              <label><input type="checkbox" checked={terrainEnabled} onChange={(event) => setTerrainEnabled(event.target.checked)} /><Mountain size={14} /><span>3D terrain</span><small>{terrainEnabled ? 'ON' : 'OFF'}</small></label>
+              <div className="unavailable-source-layer"><Layers3 size={14} /><span>Sensor footprints / orbit swaths</span><b>NO SOURCE</b></div>
+            </div>
+          </section>}
           {active === 'Scenario' && <section className="scenario-environment-panel" aria-label="Environmental inputs for the scenario">
             <header><span><Mountain size={16} /></span><div><b>Environmental inputs</b><small>Context for this map view</small></div><span className={`scenario-context-badge ${weather ? 'available' : ''}`}>{weather ? 'LIVE' : 'NO DATA'}</span></header>
             <div className="scenario-environment-metrics">
