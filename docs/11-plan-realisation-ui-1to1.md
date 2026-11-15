@@ -216,7 +216,7 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 ## Avancement — avertissement mobile toujours visible
 
 - Un bandeau ambre sous les commandes de carte rappelle en permanence « situational awareness only » et demande confirmation par le commandement. Il précise qu’aucune prévision validée de propagation n’est connectée; il ne reprend pas les corridors ou priorités fictifs de l’image de référence.
-- Revue navigateur avant le bandeau : captures 360 × 800 et 390 × 844 de Map, CRC et décodage complet validés; la carte chargée, la légende, le panneau et la barre basse tenaient dans l’écran aux deux largeurs. Après ajout du bandeau, une capture 360 × 800 valide sa présence et son contraste, mais saisit l’état « Updating forecast… » avant l’arrivée du fond cartographique. Il reste à reprendre cette capture une fois les tuiles chargées, puis à revoir les autres onglets mobiles et les interactions de la fiche.
+- Revue navigateur avec le bandeau final : captures 360 × 800 et 390 × 844 de Map après chargement du fond; les deux PNG ont passé le contrôle CRC et le décodage complet. Le bandeau 10 px, le badge, la légende vent, la fiche basse et la navigation restent visibles sans collision aux deux largeurs. Il reste à revoir Updates, Layers et Report ainsi que les interactions de hauteur/scroll de la fiche.
 - Vérification du code modifié : `npm run build` réussi et `git diff --check` propre.
 
 ## Avancement — échelle vent cohérente avec le raster
