@@ -59,7 +59,7 @@ Wireframe téléphone :
 ### Vent : contrat de rendu et de calcul
 
 1. Le backend récupère les composantes et paramètres horaires nécessaires sur une grille qui couvre la vue cartographique réelle. Il conserve heure valide, heure de récupération, source, variables et géométrie.
-2. La couche MapLibre projette la grille sur l’emprise et la caméra actuelles. La vitesse et la direction sont interpolées spatialement entre nœuds disponibles; le changement d’heure remplace la trame de manière explicite.
+2. La couche MapLibre projette la grille sur l’emprise et la caméra actuelles. La vitesse et la direction sont interpolées spatialement entre nœuds disponibles; le changement d’heure remplace la trame de manière explicite. Pour animer les traces, le cap est/nord interpolé est projeté localement à travers la caméra courante avant d’avancer les particules en pixels.
 3. Les rubans de particules suivent le vecteur local interpolé. La couleur code la vitesse selon une seule légende; l’espacement/longueur ne doit pas suggérer une durée ou une propagation du feu. Une animation statique directionnelle remplace les particules si `prefers-reduced-motion` est actif.
 4. Zoom, rotation, inclinaison, redimensionnement, déplacement et franchissement de l’antiméridien recalculent la couverture. Le forecast horaire et la grille viewport doivent appartenir au même lieu et à la même heure; pendant un changement de lieu, les anciennes valeurs météo sont retirées jusqu’à la réponse correspondante. Pendant le rafraîchissement d’emprise, l’ancien champ reste identifié comme dernier champ reçu; après erreur, aucune nouvelle valeur n’est inventée.
 5. Le budget d’animation est proportionnel à la surface de canvas et à la capacité mobile. Pause quand la vue est inactive; le mode 3D garde le relief sous le champ sans bloquer la sélection des feux.
@@ -200,6 +200,12 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Au changement de coordonnées, les heures et l’heure de récupération du forecast précédent sont maintenant effacées pendant la requête Open-Meteo. L’interface ne peut donc plus montrer la météo de l’ancien lieu à côté de la nouvelle emprise du vent.
 - La réponse horaire est acceptée uniquement si chaque variable demandée partage la même longueur temporelle; les échantillons incomplets ou dont les valeurs ne sont pas finies sont retirés avant affichage.
 - Vérification : build TypeScript/Vite et `git diff --check` à effectuer; le pan vers un autre lieu et le retour après erreur réseau restent à valider au navigateur.
+
+## Avancement — orientation des particules du vent sous caméra 3D
+
+- La direction météorologique reste calculée comme composantes est/nord en km/h. Avant le déplacement visuel des particules, cette direction est maintenant projetée localement avec le transform MapLibre courant; les caps suivent donc bearing et pitch au lieu d’être assimilés aux axes écran.
+- La cadence des particules reste une convention graphique et n’est pas une vitesse de déplacement au sol ni une durée de propagation. Les valeurs physiques sont portées par le raster et la légende km/h.
+- Vérification : build et diff à vérifier; comparer des caps cardinaux sur caméra nord, carte tournée et relief incliné dans un navigateur.
 
 ## Avancement — échelle vent cohérente avec le raster
 

@@ -479,6 +479,30 @@ function interpolateWind(vectors: WindVector[], latitude: number, longitude: num
   return { latitude, longitude, eastKmh, northKmh, speedKmh, directionTo: (Math.atan2(eastKmh, northKmh) * 180 / Math.PI + 360) % 360 }
 }
 
+function projectWindHeading(instance: MapLibreMap, longitude: number, latitude: number, vector: WindVector): [number, number] | null {
+  if (vector.speedKmh < 0.001) return null
+  const earthRadiusMeters = 6_378_137
+  const radians = Math.PI / 180
+  const probeMeters = 100
+  const latitudeRadians = latitude * radians
+  const longitudeMetersPerDegree = earthRadiusMeters * Math.max(0.05, Math.cos(latitudeRadians)) * radians
+  const latitudeDelta = probeMeters / earthRadiusMeters / radians
+  const longitudeDelta = probeMeters / longitudeMetersPerDegree
+  const origin = instance.project([longitude, latitude])
+  const east = instance.project([longitude + longitudeDelta, latitude])
+  const north = instance.project([longitude, latitude + latitudeDelta])
+  const eastShare = vector.eastKmh / vector.speedKmh
+  const northShare = vector.northKmh / vector.speedKmh
+  const screenEast = east.x - origin.x
+  const screenNorth = north.x - origin.x
+  const screenEastY = east.y - origin.y
+  const screenNorthY = north.y - origin.y
+  const projectedX = screenEast * eastShare + screenNorth * northShare
+  const projectedY = screenEastY * eastShare + screenNorthY * northShare
+  const magnitude = Math.hypot(projectedX, projectedY)
+  return magnitude > 1e-7 ? [projectedX / magnitude, projectedY / magnitude] : null
+}
+
 function createWindArrow(): ImageData {
   const canvas = document.createElement('canvas')
   canvas.width = 64; canvas.height = 64
@@ -918,10 +942,12 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
             continue
           }
           const pixel = instance.project([particle.longitude, particle.latitude])
+          const screenHeading = projectWindHeading(instance, particle.longitude, particle.latitude, vector)
+          if (!screenHeading) { particle.trail = []; continue }
           const speedPixelsPerSecond = 42 + vector.speedKmh * 0.8
           const nextPixel = [
-            pixel.x + (vector.eastKmh / vector.speedKmh) * speedPixelsPerSecond * elapsedSeconds,
-            pixel.y - (vector.northKmh / vector.speedKmh) * speedPixelsPerSecond * elapsedSeconds,
+            pixel.x + screenHeading[0] * speedPixelsPerSecond * elapsedSeconds,
+            pixel.y + screenHeading[1] * speedPixelsPerSecond * elapsedSeconds,
           ] as [number, number]
           const nextPoint = instance.unproject(nextPixel)
           particle.longitude = nextPoint.lng
