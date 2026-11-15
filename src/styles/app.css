@@ -1222,27 +1222,27 @@
 
 /* Dashboard activity card: keep the map visible through the glass and give the data a calmer focal point. */
 .dashboard-map-summary {
-  border-color: rgba(193, 234, 238, .5);
+  border-color: rgba(193, 234, 238, .58);
   border-radius: 18px;
   background:
-    radial-gradient(ellipse at 0 0, rgba(255, 177, 73, .15), transparent 43%),
-    radial-gradient(ellipse at 100% 0, rgba(56, 210, 215, .16), transparent 49%),
-    linear-gradient(140deg, rgba(17, 39, 52, .82), rgba(5, 17, 26, .76));
-  box-shadow: 0 22px 54px rgba(0, 0, 0, .34), 0 0 30px rgba(37, 210, 216, .12), inset 0 1px 0 rgba(245, 255, 255, .3), inset 0 -1px 0 rgba(99, 211, 221, .08);
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
-  backdrop-filter: blur(24px) saturate(165%);
+    radial-gradient(ellipse at 0 0, rgba(255, 177, 73, .2), transparent 43%),
+    radial-gradient(ellipse at 100% 0, rgba(56, 210, 215, .2), transparent 49%),
+    linear-gradient(140deg, rgba(17, 39, 52, .73), rgba(5, 17, 26, .68));
+  box-shadow: 0 22px 54px rgba(0, 0, 0, .38), 0 0 34px rgba(37, 210, 216, .15), inset 0 1px 0 rgba(245, 255, 255, .38), inset 0 -1px 0 rgba(99, 211, 221, .12);
+  -webkit-backdrop-filter: blur(28px) saturate(175%);
+  backdrop-filter: blur(28px) saturate(175%);
   transition: border-color .2s ease, box-shadow .2s ease;
 }
 .dashboard-map-summary:hover {
-  border-color: rgba(193, 234, 238, .64);
-  box-shadow: 0 24px 58px rgba(0, 0, 0, .37), 0 0 34px rgba(37, 210, 216, .16), inset 0 1px 0 rgba(245, 255, 255, .34), inset 0 -1px 0 rgba(99, 211, 221, .1);
+  border-color: rgba(193, 234, 238, .72);
+  box-shadow: 0 24px 58px rgba(0, 0, 0, .4), 0 0 38px rgba(37, 210, 216, .19), inset 0 1px 0 rgba(245, 255, 255, .42), inset 0 -1px 0 rgba(99, 211, 221, .14);
 }
 .dashboard-summary-emblem {
   border-color: rgba(255, 187, 112, .38);
   background: linear-gradient(145deg, rgba(255, 173, 91, .2), rgba(242, 104, 59, .09));
   box-shadow: 0 6px 20px rgba(242, 104, 59, .13), inset 0 1px 0 rgba(255, 255, 255, .2);
 }
-.dashboard-summary-context { min-height: 36px; padding: 0 10px; border: 1px solid rgba(173, 222, 228, .2); border-radius: 10px; background: linear-gradient(120deg, rgba(8, 25, 36, .58), rgba(10, 33, 43, .4)); box-shadow: inset 0 1px 0 rgba(244, 255, 255, .07); }
+.dashboard-summary-context { min-height: 36px; padding: 0 10px; border: 1px solid rgba(173, 222, 228, .28); border-radius: 10px; background: linear-gradient(120deg, rgba(8, 25, 36, .48), rgba(10, 33, 43, .3)); box-shadow: inset 0 1px 0 rgba(244, 255, 255, .1); }
 .dashboard-detection-count {
   background:
     linear-gradient(112deg, rgba(244, 177, 47, .16), transparent 68%),
