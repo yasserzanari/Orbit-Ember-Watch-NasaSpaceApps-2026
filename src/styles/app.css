@@ -905,6 +905,9 @@
 .cwfis-pilot-summary { display: flex; align-items: baseline; gap: 7px; color: #b5c9cd; font-size: 9px; }
 .cwfis-pilot-summary b { color: #f1f7f6; font-size: 15px; }
 .cwfis-pilot-summary small { margin-left: auto; color: #90aab1; }
+.cwfis-export-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; margin-left: auto; padding: 0 8px; border: 1px solid rgba(69,201,194,.35); border-radius: 6px; background: rgba(24,101,102,.18); color: #a8eeea; font-size: 8px; cursor: pointer; }
+.cwfis-export-button:hover:not(:disabled) { border-color: rgba(69,201,194,.7); background: rgba(24,101,102,.3); }
+.cwfis-export-button:disabled { color: #81969c; cursor: not-allowed; opacity: .65; }
 .cwfis-series { display: grid; gap: 9px; }
 .cwfis-series-row { display: grid; grid-template-columns: minmax(105px, 180px) 1fr 48px; align-items: end; gap: 10px; }
 .cwfis-series-row>b { padding-bottom: 2px; color: #e2ecee; font-size: 9px; }
@@ -921,7 +924,7 @@
 .cwfis-source-citation,.cwfis-idle { color: #8fa8ae; font-size: 9px; }
 .cwfis-source-citation a { color: #8ee0db; }
 .cwfis-error { color: #ffb4a7 !important; }
-@media(max-width:760px) { .cwfis-pilot-panel { padding: 12px; } .cwfis-pilot-panel>header { align-items: flex-start; flex-direction: column; } .cwfis-pilot-summary { flex-wrap: wrap; } .cwfis-pilot-summary small { flex-basis: 100%; margin-left: 0; } .cwfis-series-row { grid-template-columns: minmax(90px, 130px) 1fr 38px; gap: 5px; } .cwfis-series-row>div { gap: 2px; } .cwfis-day-labels { margin-right: 43px; padding-left: 135px; } }
+@media(max-width:760px) { .cwfis-pilot-panel { padding: 12px; } .cwfis-pilot-panel>header { align-items: flex-start; flex-direction: column; } .cwfis-pilot-summary { flex-wrap: wrap; } .cwfis-pilot-summary small { flex-basis: 100%; margin-left: 0; } .cwfis-export-button { margin-left: 0; } .cwfis-series-row { grid-template-columns: minmax(90px, 130px) 1fr 38px; gap: 5px; } .cwfis-series-row>div { gap: 2px; } .cwfis-day-labels { margin-right: 43px; padding-left: 135px; } }
 
 .calendar-board { position: relative; }
 .calendar-history-toggle { min-height: 26px; padding: 0 9px; border: 1px solid #28626a; border-radius: 6px; background: #10282f; color: #9ee5df; font-size: 8px; cursor: pointer; }

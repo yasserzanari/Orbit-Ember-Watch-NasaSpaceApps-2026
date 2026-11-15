@@ -1371,7 +1371,7 @@ function shiftUtcMonth(month: string, offset: number) {
 function CwfisHistoricalPilot() {
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [termsConfirmed, setTermsConfirmed] = useState(false)
-  const [observations, setObservations] = useState<{ id: string; acquiredAtUtc: string; sensor: string; satellite: string; source: string; agency: string }[]>([])
+  const [observations, setObservations] = useState<{ id: string; acquiredAtUtc: string; latitude: number; longitude: number; sensor: string; satellite: string; source: string; agency: string }[]>([])
   const [startDate, setStartDate] = useState('2023-05-04')
   const [endDate, setEndDate] = useState('2023-05-20')
   const [matchedCount, setMatchedCount] = useState<number | null>(null)
@@ -1385,6 +1385,17 @@ function CwfisHistoricalPilot() {
   const days = rangeValid ? Array.from({ length: dayCount }, (_, index) => shiftUtcDay(startDate, index)) : []
   const updateRange = (nextStart: string, nextEnd: string) => {
     setStartDate(nextStart); setEndDate(nextEnd); setState('idle'); setObservations([]); setMatchedCount(null); setTruncated(false); setMessage('')
+  }
+  const exportReturnedRows = () => {
+    const rows = observations.map((row) => [
+      'CWFIS Fire M3 hotspots', 'https://cwfis.cfs.nrcan.gc.ca/geoserver/ows', startDate, endDate,
+      matchedCount ?? observations.length, observations.length, truncated ? 'true' : 'false', 'unknown',
+      row.acquiredAtUtc, row.latitude, row.longitude, row.source, row.sensor, row.satellite, row.agency, row.id,
+    ])
+    downloadCsv(`orbit-ember-watch-cwfis-${startDate}-${endDate}.csv`, [
+      'dataset', 'source_url', 'query_start_utc', 'query_end_utc', 'matched_feature_count', 'returned_feature_count',
+      'truncated', 'coverage_state', 'acquired_at_utc', 'latitude', 'longitude', 'source', 'sensor', 'satellite', 'agency', 'source_record_id',
+    ], rows)
   }
   const load = async () => {
     if (!rangeValid || !termsConfirmed) return
@@ -1423,7 +1434,7 @@ function CwfisHistoricalPilot() {
     {state === 'error' && <p className="cwfis-error">{message}</p>}
     {state === 'ready' && truncated && <p className="cwfis-error" role="status">The service matched {matchedCount?.toLocaleString() ?? 'more'} features but returned only {observations.length.toLocaleString()}. Narrow the date window before interpreting totals.</p>}
     {state === 'ready' && <>
-      <div className="cwfis-pilot-summary"><b>{observations.length.toLocaleString()}</b><span>returned rows</span><b>{Object.keys(sourceCounts).length}</b><span>source labels</span><small>{startDate} → {endDate} UTC · 52.9–53.5°N, 116.2–115.1°W</small></div>
+      <div className="cwfis-pilot-summary"><b>{observations.length.toLocaleString()}</b><span>returned rows</span><b>{Object.keys(sourceCounts).length}</b><span>source labels</span><small>{startDate} → {endDate} UTC · 52.9–53.5°N, 116.2–115.1°W</small><button type="button" className="cwfis-export-button" onClick={exportReturnedRows} disabled={observations.length === 0}><Download size={12} /> Export returned rows CSV</button></div>
       <div className="cwfis-series" aria-label="Daily CWFIS hotspot rows grouped by sensor and source label">{seriesRows.map(({ name, values }) => <div className={`cwfis-series-row ${name.toUpperCase().startsWith('MODIS') ? 'modis' : name.toUpperCase().startsWith('VIIRS') ? 'viirs' : ''}`} key={name}><b>{name}</b><div style={{ gridTemplateColumns: `repeat(${days.length}, minmax(2px, 1fr))` }}>{days.map((day) => { const count = values[day] ?? 0; return <i key={day} title={`${day} UTC · ${count ? `${count.toLocaleString()} rows` : 'no returned rows; coverage unknown'}`} style={{ height: `${count ? Math.max(4, count / max * 54) : 2}px` }} /> })}</div><small className="cwfis-series-total">{seriesRows.find((row) => row.name === name)?.total.toLocaleString()}</small></div>)}</div>
       <div className="cwfis-day-labels" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(2px, 1fr))` }}>{days.map((day) => <span key={day}>{day.slice(8)}</span>)}</div>
       <div className="cwfis-source-list"><b>Source provenance</b>{Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]).map(([source, count]) => <span key={source}>{source} <strong>{count.toLocaleString()}</strong></span>)}</div>

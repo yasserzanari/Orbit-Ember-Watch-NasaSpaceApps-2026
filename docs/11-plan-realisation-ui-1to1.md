@@ -288,3 +288,9 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Le panneau CWFIS de Calendar garde son échantillon Alberta west comme défaut, mais permet de demander une période passée choisie de 1 à 31 jours dans la même emprise. Les données et leur fenêtre sont effacées dès qu’on modifie les dates afin de ne pas attribuer l’ancien graphique au nouveau choix.
 - Le client expose maintenant les correspondances tronquées par la limite de 20 000 lignes et invite à réduire la période avant d’interpréter les totaux; la série des jours et ses étiquettes suit la fenêtre choisie.
 - Vérification : la fenêtre 2023-05-01 → 2023-05-31 a rendu 16 084 lignes CWFIS, cinq étiquettes de source, 31 jours et aucune troncature. La revue Chrome 1440 × 1000 a montré les deux champs de date et le résultat chargé; Chrome était limité à 6 cœurs sur 12. La capture a passé le contrôle CRC et le décodage complet.
+
+## Avancement — export des lignes du contexte CWFIS
+
+- Le panneau historique exporte maintenant les lignes réellement retournées, avec date/coordonnées et les attributs `source`, `sensor`, `satellite` et `agency`. Chaque ligne répète les bornes demandées, le nombre de correspondances/résultats, le statut de troncature, l’état de couverture inconnue et la source WFS.
+- Le nom et le guide d’utilisation identifient l’export comme CWFIS Fire M3 composite, distinct d’une archive FIRMS NASA brute.
+- Vérification navigateur sous Chrome limité à 6 cœurs : export de l’échantillon de mai 2023 de 16 084 lignes, avec 16 champs. Le CSV de 3,52 MB contient `matched_feature_count=16084`, `truncated=false`, `coverage_state=unknown` et les coordonnées/provenances de la première ligne.
