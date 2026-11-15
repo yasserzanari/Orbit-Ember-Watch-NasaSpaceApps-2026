@@ -38,6 +38,9 @@ Sans clé, le serveur peut charger les CSV publics FIRMS des sept derniers jours
 - [Maquettes UI](docs/ui/)
 - [Catalogue des données](docs/02-catalogue-donnees.md)
 - [Méthode d’harmonisation](docs/03-indicateurs-et-methode.md)
+- [Guide de déploiement public Render](docs/DEPLOY-RENDER.md)
+- [Guide de démo hackathon](docs/DEMO-HACKATHON.md)
+- [Brouillon de soumission](docs/SUBMISSION-DRAFT.md)
 
 ## État actuel
 

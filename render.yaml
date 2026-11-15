@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: amber-orbit-watch-demo
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: CWFIS_EULA_CONFIRMED
+        value: "true"
