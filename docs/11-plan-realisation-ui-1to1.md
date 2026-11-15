@@ -272,6 +272,12 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Vérification : compilation TypeScript/Vite réussie; cas synthétiques exécutés sous `America/Los_Angeles` pour une date UTC locale sans suffixe, un jour partagé avec 50 % de chevauchement descriptif et des fenêtres sans jour commun. Avec les réponses NASA du Canada interrogées pour Edmonton (0 ligne MODIS, 6 VIIRS), le calcul ne produit aucun chevauchement et affiche qu’aucun jour partagé ne peut être comparé.
 - Limite : ce prototype aligne un support spatial candidat; il ne calibre pas la sensibilité, ne prouve pas la couverture et ne remplace pas les archives NASA FIRMS standard ni une validation indépendante.
 
+## Avancement — grille commune visible sur la carte Compare
+
+- Les cellules de 1 km issues des dates UTC partagées peuvent maintenant être superposées à la carte VIIRS. Ambre = lignes MODIS seulement sur la période, cyan = lignes VIIRS seulement, clair = lignes des deux produits sur la période; la légende évite de suggérer une coïncidence le même jour ou une identité de feu.
+- La couche est activable depuis le dock Comparer, s’aligne avec la carte synchronisée en swipe et côte-à-côte, et est bornée aux 4 000 cellules ayant reçu le plus de lignes pour préserver la réactivité.
+- Vérification : `npm run build` réussi et `git diff --check` propre. La revue navigateur de la densité, du placement de la légende et de la couche sur plusieurs niveaux de zoom reste à effectuer.
+
 ## Avancement — plages de dates FIRMS sans ambiguïté
 
 - L’API renvoie deux informations distinctes : la fenêtre où le flux NRT public est disponible et les dates réellement présentes dans le CSV national téléchargé. Le client conserve les deux; le pipeline Data & Sources les montre séparément et précise que les dates nationales ne décrivent pas la couverture de la zone sélectionnée.
