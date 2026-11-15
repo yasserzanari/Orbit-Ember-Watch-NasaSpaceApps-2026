@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const liveChecks = process.argv.includes('--live')
 
 async function getFreePort() {
   const server = createServer()
@@ -20,7 +21,7 @@ async function getFreePort() {
 const port = await getFreePort()
 const child = spawn(process.execPath, ['server/index.mjs'], {
   cwd: root,
-  env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', CWFIS_EULA_CONFIRMED: 'false', FIRMS_MAP_KEY: '' },
+  env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', CWFIS_EULA_CONFIRMED: liveChecks ? 'true' : 'false', FIRMS_MAP_KEY: '' },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 let logs = ''
@@ -64,12 +65,31 @@ try {
   assert.equal((await secretResponse.json()).code, 'secret_in_query')
   console.log('PASS browser query cannot pass a FIRMS key')
 
-  const cwfisResponse = await fetch(`http://127.0.0.1:${port}/api/cwfis/hotspots?bbox=-116.2,52.9,-115.1,53.5&start=2023-05-04&end=2023-05-10`)
-  assert.equal(cwfisResponse.status, 403)
-  assert.equal((await cwfisResponse.json()).code, 'cwfis_terms_not_confirmed')
-  console.log('PASS CWFIS endpoint is gated when agreement is not confirmed')
+  if (liveChecks) {
+    const cwfisUrl = new URLSearchParams({ bbox: '-116.2,52.9,-115.1,53.5', start: '2023-05-04', end: '2023-05-10' })
+    const cwfisResponse = await fetch(`http://127.0.0.1:${port}/api/cwfis/hotspots?${cwfisUrl}`, { signal: AbortSignal.timeout(35_000) })
+    const cwfisPayload = await cwfisResponse.json()
+    assert.equal(cwfisResponse.status, 200, JSON.stringify(cwfisPayload))
+    assert.equal(cwfisPayload.dataset, 'CWFIS Fire M3 hotspots')
+    assert.equal(cwfisPayload.coverageState, 'unknown')
+    assert.equal(cwfisPayload.truncated, false)
+    assert.match(cwfisPayload.sourceUrl, /^https:\/\/cwfis\.cfs\.nrcan\.gc\.ca\//)
+    assert.ok(cwfisPayload.observations.length > 0)
+    assert.ok(new Set(cwfisPayload.observations.map((row) => row.source)).size > 1)
+    assert.ok(new Set(cwfisPayload.observations.map((row) => row.sensor)).size > 1)
+    for (const row of cwfisPayload.observations) {
+      assert.ok(Number.isFinite(row.latitude) && Number.isFinite(row.longitude))
+      assert.ok(typeof row.acquiredAtUtc === 'string' && row.acquiredAtUtc.endsWith('Z'))
+    }
+    console.log(`PASS live CWFIS historical sample (${cwfisPayload.observations.length} rows, ${new Set(cwfisPayload.observations.map((row) => row.source)).size} source labels; coverage unknown)`)
+  } else {
+    const cwfisResponse = await fetch(`http://127.0.0.1:${port}/api/cwfis/hotspots?bbox=-116.2,52.9,-115.1,53.5&start=2023-05-04&end=2023-05-10`)
+    assert.equal(cwfisResponse.status, 403)
+    assert.equal((await cwfisResponse.json()).code, 'cwfis_terms_not_confirmed')
+    console.log('PASS CWFIS endpoint is gated when agreement is not confirmed')
+  }
 
-  if (process.argv.includes('--live')) {
+  if (liveChecks) {
     const query = new URLSearchParams({
       source: 'VIIRS_NOAA20_NRT',
       bbox: '-115.5938,52.1461,-111.3938,54.9461',
