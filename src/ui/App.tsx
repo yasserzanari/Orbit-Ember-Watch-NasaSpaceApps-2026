@@ -410,6 +410,7 @@ function parseWindGridResponse(payload: unknown, coordinates: Array<{ latitude: 
   if (records.length !== coordinates.length) throw new Error('Wind grid response did not include every requested point')
   const referenceTimes: string[] = []
   const nodes = records.map((record, index): WindNode => {
+    if (!record || typeof record !== 'object') throw new Error('Wind grid response contains an invalid map point')
     const hourly = record.hourly
     if (!Array.isArray(hourly?.time) || !Array.isArray(hourly.wind_speed_10m) || !Array.isArray(hourly.wind_direction_10m)) {
       throw new Error('Wind grid response is missing hourly speed, direction, or time data')
@@ -423,6 +424,9 @@ function parseWindGridResponse(payload: unknown, coordinates: Array<{ latitude: 
       if (!Number.isFinite(Date.parse(normalized))) throw new Error('Wind grid contains an invalid forecast time')
       return normalized
     })
+    if (times.some((time, timeIndex) => timeIndex > 0 && Date.parse(time) <= Date.parse(times[timeIndex - 1]))) {
+      throw new Error('Wind grid forecast times are not in strictly increasing order')
+    }
     if (index === 0) referenceTimes.push(...times)
     else if (times.length !== referenceTimes.length || times.some((time, timeIndex) => Date.parse(time) !== Date.parse(referenceTimes[timeIndex]))) {
       throw new Error('Wind grid forecast times do not align across map points')
@@ -458,8 +462,12 @@ function parseWindGridResponse(payload: unknown, coordinates: Array<{ latitude: 
       samples,
     }
   })
-  if (nodes.filter((node) => node.samples.some((sample) => sample.speedKmh !== null && sample.directionFrom !== null)).length < 9) {
-    throw new Error('Wind grid has too few valid points to draw a field')
+  const insufficientHours = referenceTimes.some((_, timeIndex) => nodes.filter((node) => {
+    const sample = node.samples[timeIndex]
+    return sample.speedKmh !== null && (sample.directionFrom !== null || sample.speedKmh === 0)
+  }).length < 9)
+  if (insufficientHours) {
+    throw new Error('Wind grid has fewer than nine usable points for at least one forecast hour')
   }
   return nodes
 }
@@ -509,8 +517,8 @@ function windVectorsAt(nodes: WindNode[], time?: string): WindVector[] {
   if (!time) return []
   return nodes.flatMap((node) => {
     const sample = node.samples.find((hour) => hour.time === time)
-    if (sample?.speedKmh === null || sample?.speedKmh === undefined || sample.directionFrom === null || sample.directionFrom === undefined) return []
-    const directionTo = toWindDirection(sample.directionFrom)
+    if (!sample || sample.speedKmh === null || sample.directionFrom === null && sample.speedKmh > 0) return []
+    const directionTo = toWindDirection(sample.directionFrom ?? 0)
     const radians = directionTo * Math.PI / 180
     return [{
       latitude: node.latitude,
