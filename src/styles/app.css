@@ -1288,6 +1288,9 @@
   .field-mobile-layer-toggle,
   .field-report-item { background: linear-gradient(145deg, rgba(15, 36, 47, .76), rgba(8, 22, 31, .7)); }
   .field-report-form { background: linear-gradient(145deg, rgba(16, 35, 45, .82), rgba(9, 24, 33, .78)); }
+  .field-mobile-sheet-content :is(input, select, textarea) { scroll-margin-block: 14px; }
+  .field-situation-shell:has(.field-mobile-inspector:focus-within) .field-mobile-inspector { bottom: env(safe-area-inset-bottom); }
+  .field-situation-shell:has(.field-mobile-inspector:focus-within) .field-mobile-tabs { display: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .field-situation-workspace .inspector.field-mobile-inspector { background: #0d202b; -webkit-backdrop-filter: none; backdrop-filter: none; }
