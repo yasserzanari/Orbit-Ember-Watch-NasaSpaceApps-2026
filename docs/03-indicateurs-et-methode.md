@@ -44,6 +44,8 @@ Pour un satellite, une cellule et un jour, définir le nombre de détections, la
 
 Les CSV hotspots seuls ne permettent généralement pas de déduire une absence de feu ou une observation valide d’une ligne absente. Une réponse vide de l’API signifie qu’aucune détection n’a été renvoyée ; elle ne prouve pas l’absence de feu. Un échec réseau est encore un autre état.
 
+Pour le CSV public NRT du Canada, distinguer la **fenêtre de disponibilité demandable** de la **plage de dates réellement présente dans le fichier national reçu**. Ces plages ne décrivent pas les mêmes choses : un fichier peut ne pas encore contenir de ligne pour le dernier jour de la fenêtre, et ses dates nationales ne prouvent aucune couverture de la zone sélectionnée. L’interface conserve ces deux bornes et utilise uniquement la fenêtre de disponibilité pour signaler les dates demandées qui sont hors fenêtre; les lignes restent des observations retournées, sans inférence de couverture spatiale.
+
 | Indicateur | Définition | Limite |
 |---|---|---|
 | Détections retenues | Somme par plateforme et période | Dépend de la sensibilité et des passages |

@@ -21,6 +21,10 @@ curl 'http://localhost:4174/api/firms?source=VIIRS_NOAA20_NRT&bbox=-115.5938,52.
 3. **Relier au contexte.** Dans Live Map, activer les couches de vent et de relief; préciser que le vent vient d’Open‑Meteo et ne prédit pas la propagation du feu.
 4. **Montrer la traçabilité.** Dans Data & Sources, distinguer les flux NRT de sept jours des archives historiques. Une disponibilité globale ne prouve pas la couverture d’un pixel.
 
+### Si le flux en direct est pauvre
+
+Ne pas attendre qu’un nombre de détections apparaisse et ne pas présenter un résultat vide comme une période calme. Passez au volet **Historical sample** de Calendar pour montrer le cas régional CWFIS du 4 au 20 mai 2023 et ses séries séparées par source/capteur. Ce flux composite donne un exemple visuel historique, mais n’est ni une archive FIRMS brute ni une validation de l’harmonisation. La comparaison live reste une vue des lignes retournées; si MODIS et VIIRS n’ont aucun jour de détection partagé, l’interface affiche « Agreement not evaluated ».
+
 ## Volet historique contextuel sans clé
 
 Dans **Calendar**, ouvrir **Historical sample**, laisser la case de confirmation cochée après l’avoir lue, puis charger **Alberta west · May 4–20, 2023**. Cette fenêtre régionale proche du cas Pembina permet de montrer les séries quotidiennes séparées par étiquette de capteur et de source, avec le décompte des sources présentes dans les lignes retournées. La requête utilise l’API WFS officielle CWFIS `public:hotspots`; le flux Fire M3 réunit plusieurs fournisseurs et ses lignes conservent `source`, `sensor`, `satellite` et `agency`.

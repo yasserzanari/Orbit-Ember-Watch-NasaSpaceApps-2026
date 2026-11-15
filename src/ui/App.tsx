@@ -169,6 +169,7 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [queryRange, setQueryRange] = useState<{ start: string; end: string } | null>(null)
   const [sourceDateRange, setSourceDateRange] = useState<FirmsDateRange | null>(null)
+  const [detectionDateRange, setDetectionDateRange] = useState<FirmsDateRange | null>(null)
   const [configured, setConfigured] = useState<boolean | null>(null)
   const [publicNrtSupported, setPublicNrtSupported] = useState(false)
   const [accessMode, setAccessMode] = useState<'public-nrt-canada-csv' | 'map-key-area-api' | 'local-validated-archive' | null>(null)
@@ -184,7 +185,7 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
 
   useEffect(() => {
     requestController.current?.abort()
-    setState('idle'); setMessage(''); setObservations([]); setFetchedAt(null); setQueryRange(null); setSourceDateRange(null); setAccessMode(null); setArchiveImports([])
+    setState('idle'); setMessage(''); setObservations([]); setFetchedAt(null); setQueryRange(null); setSourceDateRange(null); setDetectionDateRange(null); setAccessMode(null); setArchiveImports([])
     return () => requestController.current?.abort()
   }, [lat, lon, source, days])
 
@@ -200,7 +201,7 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
     requestController.current?.abort()
     const controller = new AbortController()
     requestController.current = controller
-    setState('loading'); setMessage(''); setSourceDateRange(null); setAccessMode(null); setArchiveImports([])
+    setState('loading'); setMessage(''); setSourceDateRange(null); setDetectionDateRange(null); setAccessMode(null); setArchiveImports([])
     try {
       const response = await fetch(`/api/firms?${params}`, { signal: controller.signal })
       const payload = await response.json()
@@ -219,6 +220,11 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
         ? { minDate: sourceRange.minDate, maxDate: sourceRange.maxDate }
         : null
       setSourceDateRange(nextSourceDateRange)
+      const detectionRange = payload.detectionDateRange
+      const nextDetectionDateRange = detectionRange && typeof detectionRange.minDate === 'string' && typeof detectionRange.maxDate === 'string'
+        ? { minDate: detectionRange.minDate, maxDate: detectionRange.maxDate }
+        : null
+      setDetectionDateRange(nextDetectionDateRange)
       const count = Number.isSafeInteger(payload.count) && payload.count >= 0 ? payload.count : (Array.isArray(payload.observations) ? payload.observations.length : 0)
       const sourceWindowIncomplete = nextAccessMode === 'public-nrt-canada-csv' && nextSourceDateRange && typeof payload.queryStartDate === 'string' && typeof payload.queryEndDate === 'string'
         && (nextSourceDateRange.minDate > payload.queryStartDate || nextSourceDateRange.maxDate < payload.queryEndDate)
@@ -236,7 +242,7 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
     }
   }
 
-  return { source, days, observations, state, message, fetchedAt, queryRange, sourceDateRange, configured, publicNrtSupported, publicFeedAvailable, accessMode, archiveImports, load }
+  return { source, days, observations, state, message, fetchedAt, queryRange, sourceDateRange, detectionDateRange, configured, publicNrtSupported, publicFeedAvailable, accessMode, archiveImports, load }
 }
 
 const navItems = [
@@ -1157,7 +1163,9 @@ function SourcePipeline({ observations, feed, archiveCatalog }: { observations: 
     : archiveCatalog.status === 'loading' ? 'Reading local manifests'
       : archiveCatalog.status === 'error' ? 'Manifest read failed' : 'Catalog not opened'
   const steps = [
-    { icon: Satellite, label: 'Acquisition', value: acquisition, detail: feed.fetchedAt ? `${sourceLabel} · retrieved ${new Date(feed.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : `${sourceLabel} · ${feed.days} day window`, state: feed.state },
+    { icon: Satellite, label: 'Acquisition', value: acquisition, detail: feed.accessMode === 'public-nrt-canada-csv' && feed.sourceDateRange
+      ? `Available window ${feed.sourceDateRange.minDate} → ${feed.sourceDateRange.maxDate}${feed.detectionDateRange ? ` · Canada CSV rows dated ${feed.detectionDateRange.minDate} → ${feed.detectionDateRange.maxDate}` : ''}; source-wide dates do not prove coverage for this area.`
+      : feed.fetchedAt ? `${sourceLabel} · retrieved ${new Date(feed.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : `${sourceLabel} · ${feed.days} day window`, state: feed.state },
     { icon: Database, label: 'Normalize', value: normalization, detail: feed.state === 'ready' ? 'Product identity and native FIRMS fields retained' : 'Field mapping follows the selected source response', state: feed.state === 'ready' ? 'ready' : feed.state },
     { icon: Activity, label: 'Daily roll-up', value: aggregation, detail: 'Counts are returned observation rows, not unique fires', state: feed.state === 'ready' ? 'ready' : feed.state },
     { icon: ClipboardList, label: 'Archive provenance', value: archiveSummary, detail: archiveCatalog.status === 'ready' && archiveCatalog.archives.length ? 'Manifest, QA status and SHA-256 available in the catalog above' : 'Historical import catalog is read separately from live FIRMS', state: archiveCatalog.status },
@@ -1910,7 +1918,7 @@ export function App() {
             <div className="dashboard-product-line"><Satellite size={14} /><span>{firmsSources.find((item) => item.id === firms.source)?.label ?? firms.source}</span></div>
             {weather && <div className="dashboard-condition-row"><div><Wind size={14} /><span>Wind</span><b>{Math.round(weather.windSpeed)} km/h</b></div><div><CloudRain size={14} /><span>Rain</span><b>{weather.precipitation.toFixed(1)} mm</b></div></div>}
             {firms.configured === false && <p className="dashboard-key-note">{firms.publicFeedAvailable ? 'The public Canada NRT feed covers at most the latest 7 days. Older dates use a matching local archive or the server key.' : 'Use a matching local archive for the selected date or configure FIRMS_MAP_KEY on the server.'}</p>}
-            {firms.accessMode === 'public-nrt-canada-csv' && firms.sourceDateRange && firms.queryRange && firms.sourceDateRange.maxDate < firms.queryRange.end && <p className="dashboard-key-note">Public feed rows are present through {firms.sourceDateRange.maxDate}; later requested dates remain unknown.</p>}
+            {firms.accessMode === 'public-nrt-canada-csv' && firms.sourceDateRange && firms.queryRange && firms.sourceDateRange.maxDate < firms.queryRange.end && <p className="dashboard-key-note">The public feed availability window ends {firms.sourceDateRange.maxDate}; later requested dates are outside that window and remain unknown.</p>}
             {firms.state === 'error' && <p className="dashboard-key-note error-note">The observation request failed. Retry to load this product and time window.</p>}
             <button className="dashboard-load-button" onClick={() => void firms.load()} disabled={firms.state === 'loading'}>{firms.state === 'loading' ? <><span className="spinner" /> Loading observations</> : <><RefreshCw size={13} /> {firms.state === 'error' ? 'Retry observations' : firms.state === 'ready' ? 'Refresh observations' : 'Load observations'}</>}</button>
             {firms.fetchedAt && <small className="dashboard-freshness">Retrieved {new Date(firms.fetchedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · {firmsAccessLabel(firms.accessMode)}{firms.accessMode === 'local-validated-archive' ? ` · ${firms.archiveImports.map((item) => item.sourceFile).join(', ') || 'import provenance unavailable'}` : ''}</small>}

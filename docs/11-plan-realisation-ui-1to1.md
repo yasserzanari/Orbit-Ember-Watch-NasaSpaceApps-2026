@@ -271,3 +271,9 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - La vue nomme produits, modes d’accès et comptes, affiche le chevauchement observé/union et avertit que ce n’est ni une couverture, ni une concordance de capteurs, ni une identité de feux. Le CSV contient la fenêtre, les paramètres de projection et les comptes/plateformes par produit.
 - Vérification : compilation TypeScript/Vite réussie; cas synthétiques exécutés sous `America/Los_Angeles` pour une date UTC locale sans suffixe, un jour partagé avec 50 % de chevauchement descriptif et des fenêtres sans jour commun. Avec les réponses NASA du Canada interrogées pour Edmonton (0 ligne MODIS, 6 VIIRS), le calcul ne produit aucun chevauchement et affiche qu’aucun jour partagé ne peut être comparé.
 - Limite : ce prototype aligne un support spatial candidat; il ne calibre pas la sensibilité, ne prouve pas la couverture et ne remplace pas les archives NASA FIRMS standard ni une validation indépendante.
+
+## Avancement — plages de dates FIRMS sans ambiguïté
+
+- L’API renvoie deux informations distinctes : la fenêtre où le flux NRT public est disponible et les dates réellement présentes dans le CSV national téléchargé. Le client conserve les deux; le pipeline Data & Sources les montre séparément et précise que les dates nationales ne décrivent pas la couverture de la zone sélectionnée.
+- Le message Dashboard pour une fenêtre qui dépasse la disponibilité indique maintenant la borne de disponibilité et garde les dates hors fenêtre inconnues; il ne prétend plus que des lignes existent jusqu’à cette date.
+- Vérification : pour Edmonton, l’API NRT Canada a répondu HTTP 200 avec fenêtre disponible du 2026-11-08 au 2026-11-15 et lignes de CSV datées du 2026-11-07 au 2026-11-14; le navigateur limité à 6 cœurs a rendu ces deux plages distinctement. `npm run build` et `git diff --check` passent.
