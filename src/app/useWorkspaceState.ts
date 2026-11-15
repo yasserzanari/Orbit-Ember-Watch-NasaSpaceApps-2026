@@ -110,7 +110,7 @@ function readWorkspaceState(): WorkspaceState {
   const daysParam = Number(params.get('days')) as FirmsDayRange
   const includesTimezone = timestamp ? /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) : false
   const date = timestamp ? new Date(includesTimezone ? timestamp : `${timestamp}Z`) : null
-  const selectedTime = date && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 16) : null
+  const selectedTime = date && Number.isFinite(date.getTime()) ? `${date.toISOString().slice(0, 16)}Z` : null
   const knownLocation = workspaceLocations.find((item) => item.name === name)
   const location = knownLocation ?? (lat !== null && lon !== null
     ? { name: name || `Map point · ${lat.toFixed(3)}°, ${lon.toFixed(3)}°`, lat, lon }

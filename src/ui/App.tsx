@@ -286,6 +286,10 @@ function matchesLiveSensor(observation: FireObservation, sensor: typeof liveSens
 
 type MapPoint = { name: string; lat: number; lon: number }
 
+function normalizeUtcTimestamp(value: string) {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`
+}
+
 function useWeather(lat: number, lon: number) {
   const [hours, setHours] = useState<ForecastHour[]>([])
   const [retrievedAt, setRetrievedAt] = useState<string | null>(null)
@@ -315,7 +319,7 @@ function useWeather(lat: number, lon: number) {
         const sampleCount = hourly.time.length
         if (fields.some((field) => hourly[field].length !== sampleCount)) throw new Error('Hourly weather variables have inconsistent time ranges')
         const loaded: ForecastHour[] = hourly.time.map((time: string, index: number) => ({
-          time,
+          time: normalizeUtcTimestamp(time),
           temperature: hourly.temperature_2m[index],
           windSpeed: hourly.wind_speed_10m[index],
           windDirectionFrom: hourly.wind_direction_10m[index],
@@ -436,7 +440,7 @@ function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
               latitude: Number.isFinite(record.latitude) ? record.latitude! : coordinates[index].latitude,
               longitude: Number.isFinite(record.longitude) ? unwrapLongitude(record.longitude!, coordinates[index].longitude) : coordinates[index].longitude,
               samples: hourly.time.map((time, hourIndex) => ({
-                time,
+                time: normalizeUtcTimestamp(time),
                 speedKmh: Number.isFinite(hourly.wind_speed_10m![hourIndex]) ? hourly.wind_speed_10m![hourIndex] : null,
                 directionFrom: Number.isFinite(hourly.wind_direction_10m![hourIndex]) ? hourly.wind_direction_10m![hourIndex] : null,
               })),
@@ -1112,7 +1116,7 @@ function SourcePipeline({ observations, feed, archiveCatalog }: { observations: 
   </section>
 }
 
-function SourceFocusCard({ selected, location, feed, windField, windTime, terrainAnalysis, elevation, archiveCatalog, onOpenCompare, onOpenTerrain, onOpenLiveMap, onRetryWind, onRefreshArchive }: { selected: DataSourceId; location: MapPoint; feed: ReturnType<typeof useFirms>; windField: WindFieldState; windTime?: string; terrainAnalysis: TerrainAnalysis; elevation: { value: number; state: 'loading' | 'ready' | 'error' }; archiveCatalog: FirmsArchiveState; onOpenCompare: () => void; onOpenTerrain: () => void; onOpenLiveMap: () => void; onRetryWind: () => void; onRefreshArchive: () => void }) {
+function SourceFocusCard({ selected, location, feed, windField, windTime, terrainAnalysis, elevation, archiveCatalog, onOpenCompare, onOpenTerrain, onOpenLiveMap, onRetryWind, onRetryElevation, onRefreshArchive }: { selected: DataSourceId; location: MapPoint; feed: ReturnType<typeof useFirms>; windField: WindFieldState; windTime?: string; terrainAnalysis: TerrainAnalysis; elevation: { value: number; state: 'loading' | 'ready' | 'error' }; archiveCatalog: FirmsArchiveState; onOpenCompare: () => void; onOpenTerrain: () => void; onOpenLiveMap: () => void; onRetryWind: () => void; onRetryElevation: () => void; onRefreshArchive: () => void }) {
   const product = firmsSources.find((item) => item.id === feed.source)
   const selectedArchiveRows = archiveCatalog.archives.filter((archive) => archive.product === feed.source)
   const details: Record<DataSourceId, { title: string; subtitle: string; status: string; facts: Array<[string, string]>; note: string }> = {
@@ -1191,7 +1195,8 @@ function SourceFocusCard({ selected, location, feed, windField, windTime, terrai
       }
       return
     }
-    if (selected === 'archive' && (archiveCatalog.status === 'idle' || archiveCatalog.status === 'error')) onRefreshArchive()
+    if (selected === 'elevation') onRetryElevation()
+    else if (selected === 'archive' && (archiveCatalog.status === 'idle' || archiveCatalog.status === 'error')) onRefreshArchive()
     else if (selected === 'firms' || selected === 'archive' && feed.accessMode === 'local-validated-archive') void feed.load()
     else if (selected === 'wind') onRetryWind()
     else if (selected === 'terrain') onOpenTerrain()
@@ -1204,7 +1209,7 @@ function SourceFocusCard({ selected, location, feed, windField, windTime, terrai
     <dl>{detail.facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     <p>{detail.note}</p>
     <div className="source-focus-actions">
-      <button type="button" className="source-focus-action primary" onClick={primaryAction} disabled={selected === 'elevation' && elevation.state !== 'ready' || selected === 'archive' && archiveCatalog.status === 'loading' || selected === 'archive' && !canExport && archiveCatalog.status === 'ready' && selectedArchiveRows.length === 0 && feed.accessMode !== 'local-validated-archive' || selected === 'wind' && windField.state === 'loading' || selected === 'terrain' && terrainAnalysis.state === 'loading' || (selected === 'firms' || selected === 'archive' && feed.accessMode === 'local-validated-archive') && feed.state === 'loading'} title={canExport ? 'Download the actual sample with source and unit metadata as CSV' : exportLabel}>{canExport ? <Download size={13} /> : selected === 'terrain' && !canExport ? <Mountain size={13} /> : <RefreshCw size={13} />}{exportLabel}</button>
+      <button type="button" className="source-focus-action primary" onClick={primaryAction} disabled={selected === 'elevation' && elevation.state === 'loading' || selected === 'archive' && archiveCatalog.status === 'loading' || selected === 'archive' && !canExport && archiveCatalog.status === 'ready' && selectedArchiveRows.length === 0 && feed.accessMode !== 'local-validated-archive' || selected === 'wind' && windField.state === 'loading' || selected === 'terrain' && terrainAnalysis.state === 'loading' || (selected === 'firms' || selected === 'archive' && feed.accessMode === 'local-validated-archive') && feed.state === 'loading'} title={canExport ? 'Download the actual sample with source and unit metadata as CSV' : exportLabel}>{canExport ? <Download size={13} /> : selected === 'terrain' && !canExport ? <Mountain size={13} /> : <RefreshCw size={13} />}{selected === 'elevation' && elevation.state === 'error' ? 'Retry elevation sample' : exportLabel}</button>
       <button type="button" className="source-focus-action" onClick={secondaryAction} disabled={secondaryDisabled}>{selected === 'firms' ? <Activity size={13} /> : selected === 'wind' ? <Wind size={13} /> : selected === 'archive' ? <Database size={13} /> : <Mountain size={13} />}{secondaryLabel}</button>
     </div>
   </section>
@@ -1241,17 +1246,29 @@ function CompareTrend({ feed, tone }: { feed: CompareFeed; tone: 'modis' | 'viir
       ? requestedDays.filter((day) => day >= feed.sourceDateRange!.minDate && day <= feed.sourceDateRange!.maxDate)
       : requestedDays
   const maximum = Math.max(1, ...days.map((day) => byDay.get(day) ?? 0))
+  const archiveMode = feed.accessMode === 'local-validated-archive'
   const plotPoints = days.map((day, index) => {
     const count = byDay.get(day) ?? 0
+    const dayIndex = archiveMode ? requestedDays.indexOf(day) : index
+    const plotLength = archiveMode ? requestedDays.length : days.length
     return {
       day,
       count,
-      x: days.length < 2 ? 57 : 15 + index / (days.length - 1) * 82,
+      x: plotLength < 2 ? 57 : 15 + dayIndex / (plotLength - 1) * 82,
       y: 76 - count / maximum * 58,
     }
   })
   const linePoints = plotPoints.map((point) => `${point.x},${point.y}`).join(' ')
   const areaPoints = plotPoints.length ? `15,78 ${linePoints} ${plotPoints.at(-1)!.x},78` : ''
+  const lineSegments: typeof plotPoints[] = []
+  for (const point of plotPoints) {
+    const segment = lineSegments.at(-1)
+    const previous = segment?.at(-1)
+    if (!previous || !archiveMode || shiftUtcDay(previous.day, 1) === point.day) {
+      if (segment) segment.push(point)
+      else lineSegments.push([point])
+    } else lineSegments.push([point])
+  }
   const publicWindowIncomplete = feed.accessMode === 'public-nrt-canada-csv' && feed.sourceDateRange !== null && feed.queryRange !== null
     && (feed.sourceDateRange.minDate > feed.queryRange.start || feed.sourceDateRange.maxDate < feed.queryRange.end)
   return <section className={`compare-trend-card ${tone}`}>
@@ -1263,11 +1280,11 @@ function CompareTrend({ feed, tone }: { feed: CompareFeed; tone: 'modis' | 'viir
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Daily returned observation counts for ${feed.source}`}>
           <defs><linearGradient id={`compare-fill-${tone}`} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" /><stop offset="100%" /></linearGradient></defs>
           {[18, 33, 48, 63, 78].map((y, index) => <g key={y}><line x1="14" x2="99" y1={y} y2={y} className="compare-chart-gridline" /><text x="11" y={y + 1.5} textAnchor="end" className="compare-chart-y-label">{Math.round(maximum * (4 - index) / 4)}</text></g>)}
-          {plotPoints.length > 1 && <polygon points={areaPoints} className="compare-chart-area" />}
-          {plotPoints.length > 1 && <polyline points={linePoints} className="compare-chart-line" vectorEffect="non-scaling-stroke" />}
+          {!archiveMode && plotPoints.length > 1 && <polygon points={areaPoints} className="compare-chart-area" />}
+          {lineSegments.filter((segment) => segment.length > 1).map((segment) => <polyline key={segment[0].day} points={segment.map((point) => `${point.x},${point.y}`).join(' ')} className="compare-chart-line" vectorEffect="non-scaling-stroke" />)}
           {plotPoints.map((point) => <ellipse key={point.day} cx={point.x} cy={point.y} rx="1.1" ry="3" className="compare-chart-point"><title>{point.day} UTC · {point.count.toLocaleString()} returned observations</title></ellipse>)}
         </svg>
-        <div className="compare-chart-axis"><span>{days[0] ? new Date(`${days[0]}T00:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric' }) : '—'}</span><span>{days.at(-1) ? new Date(`${days.at(-1)}T00:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric' }) : '—'}</span></div>
+        <div className="compare-chart-axis"><span>{(archiveMode ? requestedDays[0] : days[0]) ? new Date(`${(archiveMode ? requestedDays[0] : days[0])}T00:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric' }) : '—'}</span><span>{(archiveMode ? requestedDays.at(-1) : days.at(-1)) ? new Date(`${(archiveMode ? requestedDays.at(-1) : days.at(-1))}T00:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'short', day: 'numeric' }) : '—'}</span></div>
       </div></> : <div className="compare-trend-empty">{feed.state === 'loading' ? 'Requesting this sensor product…' : feed.state === 'error' ? 'This product request failed; retry from Sensor A/B.' : 'Load this product to build a chart from returned acquisition dates.'}</div>}
   </section>
 }
@@ -1434,6 +1451,7 @@ export function App() {
   const [transectVisible, setTransectVisible] = useState(true)
   const [terrainRefresh, setTerrainRefresh] = useState(0)
   const [elevation, setElevation] = useState<{ value: number; state: 'loading' | 'ready' | 'error' }>({ value: 0, state: 'loading' })
+  const [elevationRefresh, setElevationRefresh] = useState(0)
   const [windViewport, setWindViewport] = useState<WindViewport | null>(null)
   const [customTerrainTransect, setCustomTerrainTransect] = useState<TerrainEndpoints | null>(null)
   const [terrainTransectPointTarget, setTerrainTransectPointTarget] = useState<'A' | 'B' | null>(null)
@@ -1505,6 +1523,7 @@ export function App() {
   }, [active, compareA.queryRange?.end, compareA.state, compareB.queryRange?.end, compareB.state, firms.queryRange?.end, firms.state, liveModis.queryRange?.end, liveModis.state, liveNoaa20.queryRange?.end, liveNoaa20.state, liveNoaa21.queryRange?.end, liveNoaa21.state, liveSensors, queryEndDate])
   useEffect(() => {
     const controller = new AbortController()
+    setElevation((current) => ({ ...current, state: 'loading' }))
     const params = new URLSearchParams({ latitude: String(location.lat), longitude: String(location.lon) })
     fetch(`https://api.open-meteo.com/v1/elevation?${params}`, { signal: controller.signal })
       .then((response) => { if (!response.ok) throw new Error('Elevation unavailable'); return response.json() })
@@ -1514,7 +1533,7 @@ export function App() {
       })
       .catch((error: unknown) => { if (!(error instanceof Error && error.name === 'AbortError')) setElevation((current) => ({ ...current, state: 'error' })) })
     return () => controller.abort()
-  }, [location])
+  }, [location, elevationRefresh])
   useEffect(() => {
     if (!hours.length) return
     if (selectedTime && hours.some((hour) => hour.time === selectedTime)) return
@@ -1735,7 +1754,7 @@ export function App() {
     <div className="terrain-attribution"><b>Source & attribution</b><span>Mapzen Terrain Tiles · Terrarium RGB · Canadian terrain data © Open Government Licence — Canada</span><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
   </> : active === 'Data & Sources' ? <>
     <div className="panel-heading"><div><h2>Data & provenance</h2><p>Sources currently used in this view</p></div><Database size={18} /></div>
-    <SourceFocusCard selected={selectedDataSource} location={location} feed={firms} windField={windField} windTime={weather?.time} terrainAnalysis={terrainAnalysis} elevation={elevation} archiveCatalog={firmsArchiveCatalog} onOpenCompare={openSelectedSourceInCompare} onOpenTerrain={() => setActive('Terrain')} onOpenLiveMap={() => setActive('Live Map')} onRetryWind={() => windField.retry()} onRefreshArchive={openSourceArchiveCatalog} />
+    <SourceFocusCard selected={selectedDataSource} location={location} feed={firms} windField={windField} windTime={weather?.time} terrainAnalysis={terrainAnalysis} elevation={elevation} archiveCatalog={firmsArchiveCatalog} onOpenCompare={openSelectedSourceInCompare} onOpenTerrain={() => setActive('Terrain')} onOpenLiveMap={() => setActive('Live Map')} onRetryWind={() => windField.retry()} onRetryElevation={() => setElevationRefresh((current) => current + 1)} onRefreshArchive={openSourceArchiveCatalog} />
     <div className="source-card"><div><Wind size={16} /><b>Open-Meteo wind grid</b><span className={windField.state === 'ready' ? 'source-live' : 'source-missing'}>{windField.state === 'ready' ? 'CONNECTED' : windField.state === 'loading' && windField.nodes.length ? 'UPDATING VIEW' : windField.state.toUpperCase()}</span></div><p>{windField.state === 'ready' ? `${windField.nodes.length} forecast points interpolate hourly wind speed and direction across the visible map extent.` : windField.nodes.length ? 'The previous map grid stays visible while this camera extent refreshes.' : 'A 5 × 5 forecast grid drives the map wind field.'}</p><small>25 points · viewport-relative grid · UTC · selected timeline hour · vector interpolation · {windField.retrievedAt ? `retrieved ${new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'not yet retrieved'}</small><a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">API documentation <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Mapzen Terrain Tiles · Terrarium</b><span className={terrainAnalysis.state === 'ready' ? 'source-live' : 'source-missing'}>{terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state.toUpperCase()}</span></div><p>Bare-earth elevation tiles drive the 3D relief and the selected-point slope/aspect and transect samples.</p><small>Terrarium RGB · Canadian source attribution: Open Government Licence — Canada. Land cover and fuel classes remain unconnected.</small><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Open-Meteo Elevation</b><span className={elevation.state === 'ready' ? 'source-live' : 'source-missing'}>{elevation.state === 'ready' ? 'CONNECTED' : elevation.state.toUpperCase()}</span></div><p>{elevation.state === 'ready' ? `Point elevation: ${Math.round(elevation.value)} m.` : 'Point elevation lookup for selected coordinates.'}</p><small>One coordinate sample · metres above sea level</small></div>
