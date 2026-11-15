@@ -1253,3 +1253,33 @@
 @media (prefers-reduced-motion: reduce) {
   .dashboard-map-summary { transition: none; }
 }
+
+/* Field Situation sheet: a translucent command surface over the live map. */
+@media (max-width: 760px) {
+  .field-situation-workspace .inspector.field-mobile-inspector {
+    border-color: rgba(165, 216, 222, .38);
+    background:
+      radial-gradient(ellipse at 12% 0, rgba(37, 210, 216, .12), transparent 42%),
+      linear-gradient(158deg, rgba(14, 35, 47, .92), rgba(8, 21, 31, .9));
+    box-shadow: 0 -12px 36px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(231, 251, 252, .13);
+    -webkit-backdrop-filter: blur(22px) saturate(155%);
+    backdrop-filter: blur(22px) saturate(155%);
+  }
+  .field-sheet-handle>i { box-shadow: 0 0 12px rgba(120, 207, 211, .18); }
+  .field-mobile-panel>header { border-bottom-color: rgba(173, 216, 222, .19); }
+  .field-mobile-source-status,
+  .field-mobile-layer-toggle,
+  .field-report-status,
+  .field-report-form,
+  .field-report-item {
+    border-color: rgba(143, 191, 199, .2);
+    box-shadow: inset 0 1px 0 rgba(236, 252, 252, .045);
+  }
+  .field-mobile-source-status,
+  .field-mobile-layer-toggle,
+  .field-report-item { background: linear-gradient(145deg, rgba(15, 36, 47, .76), rgba(8, 22, 31, .7)); }
+  .field-report-form { background: linear-gradient(145deg, rgba(16, 35, 45, .82), rgba(9, 24, 33, .78)); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .field-situation-workspace .inspector.field-mobile-inspector { background: #0d202b; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

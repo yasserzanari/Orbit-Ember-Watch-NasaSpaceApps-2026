@@ -213,6 +213,13 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Le scroll est limité au contenu de la fiche, la commande de hauteur reste visible et la barre de navigation basse conserve sa zone tactile.
 - Vérification : build TypeScript/Vite et `git diff --check` à effectuer; comparer hauteur, scroll et zones tactiles sur 360 × 800 et 390 × 844 px.
 
+## Avancement — verre dépoli du panneau Field Situation
+
+- Le panneau bas mobile partagé par Map, Updates, Layers et Report utilise maintenant une surface translucide bleu pétrole avec un reflet turquoise léger, un liseré plus net et une poignée distincte. Les fiches de source, couches et rapports gardent des fonds plus denses afin de préserver leur contraste; les états de faible transparence peuvent revenir à une surface pleine.
+- Revue navigateur des quatre onglets à 390 × 844 : Map, Updates, Layers et Report ont été sélectionnés et capturés. Les quatre PNG ont passé la vérification CRC et le décodage complet; Chrome headless a été limité à 6 cœurs sur 12 puis fermé après la revue. Les filtres Updates sont accessibles, le toggle Vent et les couches en lecture seule sont clairs, le rapport garde une attribution locale et un formulaire focalisé.
+- Le formulaire Report reste plus long que la première hauteur visible du panneau; son contenu défile dans la fiche et la barre des onglets reste fixe. À revoir dans la prochaine passe : la longueur du formulaire, ainsi que les grandes tailles de texte et le clavier mobile.
+- Vérification du code : `npm run build` réussi et `git diff --check` propre.
+
 ## Avancement — avertissement mobile toujours visible
 
 - Un bandeau ambre sous les commandes de carte rappelle en permanence « situational awareness only » et demande confirmation par le commandement. Il précise qu’aucune prévision validée de propagation n’est connectée; il ne reprend pas les corridors ou priorités fictifs de l’image de référence.
