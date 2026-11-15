@@ -401,6 +401,69 @@ function cameraWindViewport(instance: MapLibreMap): WindViewport {
   }
 }
 
+function parseWindGridResponse(payload: unknown, coordinates: Array<{ latitude: number; longitude: number }>): WindNode[] {
+  const records = (Array.isArray(payload) ? payload : [payload]) as Array<{
+    latitude?: unknown
+    longitude?: unknown
+    hourly?: { time?: unknown; wind_speed_10m?: unknown; wind_direction_10m?: unknown }
+  }>
+  if (records.length !== coordinates.length) throw new Error('Wind grid response did not include every requested point')
+  const referenceTimes: string[] = []
+  const nodes = records.map((record, index): WindNode => {
+    const hourly = record.hourly
+    if (!Array.isArray(hourly?.time) || !Array.isArray(hourly.wind_speed_10m) || !Array.isArray(hourly.wind_direction_10m)) {
+      throw new Error('Wind grid response is missing hourly speed, direction, or time data')
+    }
+    if (hourly.time.length === 0 || hourly.wind_speed_10m.length !== hourly.time.length || hourly.wind_direction_10m.length !== hourly.time.length) {
+      throw new Error('Wind grid hourly series have different lengths')
+    }
+    const times = hourly.time.map((time) => {
+      if (typeof time !== 'string') throw new Error('Wind grid contains an invalid forecast time')
+      const normalized = normalizeUtcTimestamp(time)
+      if (!Number.isFinite(Date.parse(normalized))) throw new Error('Wind grid contains an invalid forecast time')
+      return normalized
+    })
+    if (index === 0) referenceTimes.push(...times)
+    else if (times.length !== referenceTimes.length || times.some((time, timeIndex) => Date.parse(time) !== Date.parse(referenceTimes[timeIndex]))) {
+      throw new Error('Wind grid forecast times do not align across map points')
+    }
+    const requestedPoint = coordinates[index]
+    const latitude = record.latitude === undefined ? requestedPoint.latitude : record.latitude
+    const longitude = record.longitude === undefined ? requestedPoint.longitude : record.longitude
+    if (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90
+      || typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      throw new Error('Wind grid response contains invalid coordinates')
+    }
+    const speedValues = hourly.wind_speed_10m
+    const directionValues = hourly.wind_direction_10m
+    const samples = times.map((time, timeIndex) => {
+      const speed = speedValues[timeIndex]
+      const direction = directionValues[timeIndex]
+      if (speed !== null && (typeof speed !== 'number' || !Number.isFinite(speed) || speed < 0)) {
+        throw new Error('Wind grid contains a speed outside its valid range')
+      }
+      if (direction !== null && (typeof direction !== 'number' || !Number.isFinite(direction) || direction < 0 || direction > 360)) {
+        throw new Error('Wind grid contains a direction outside 0–360°')
+      }
+      return {
+        time,
+        speedKmh: typeof speed === 'number' ? speed : null,
+        directionFrom: typeof direction === 'number' ? direction : null,
+      }
+    })
+    return {
+      id: `wind-${requestedPoint.latitude.toFixed(3)}-${requestedPoint.longitude.toFixed(3)}`,
+      latitude,
+      longitude: unwrapLongitude(longitude, requestedPoint.longitude),
+      samples,
+    }
+  })
+  if (nodes.filter((node) => node.samples.some((sample) => sample.speedKmh !== null && sample.directionFrom !== null)).length < 9) {
+    throw new Error('Wind grid has too few valid points to draw a field')
+  }
+  return nodes
+}
+
 function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
   const [field, setField] = useState<WindFieldState>({ state: 'loading', nodes: [], retrievedAt: null })
   const [retry, setRetry] = useState(0)
@@ -426,27 +489,7 @@ function useWindField(lat: number, lon: number, viewport: WindViewport | null) {
           return response.json()
         })
         .then((payload: unknown) => {
-          const records = (Array.isArray(payload) ? payload : [payload]) as Array<{
-            latitude?: number
-            longitude?: number
-            hourly?: { time?: string[]; wind_speed_10m?: number[]; wind_direction_10m?: number[] }
-          }>
-          if (records.length !== coordinates.length) throw new Error('Wind grid response did not include every requested point')
-          const nodes = records.map((record, index): WindNode | null => {
-            const hourly = record.hourly
-            if (!Array.isArray(hourly?.time) || !Array.isArray(hourly.wind_speed_10m) || !Array.isArray(hourly.wind_direction_10m)) return null
-            return {
-              id: `wind-${coordinates[index].latitude.toFixed(3)}-${coordinates[index].longitude.toFixed(3)}`,
-              latitude: Number.isFinite(record.latitude) ? record.latitude! : coordinates[index].latitude,
-              longitude: Number.isFinite(record.longitude) ? unwrapLongitude(record.longitude!, coordinates[index].longitude) : coordinates[index].longitude,
-              samples: hourly.time.map((time, hourIndex) => ({
-                time: normalizeUtcTimestamp(time),
-                speedKmh: Number.isFinite(hourly.wind_speed_10m![hourIndex]) ? hourly.wind_speed_10m![hourIndex] : null,
-                directionFrom: Number.isFinite(hourly.wind_direction_10m![hourIndex]) ? hourly.wind_direction_10m![hourIndex] : null,
-              })),
-            }
-          }).filter((node): node is WindNode => node !== null)
-          if (nodes.length < 9) throw new Error('Wind grid has too few valid points to draw a field')
+          const nodes = parseWindGridResponse(payload, coordinates)
           setField({ state: 'ready', nodes, retrievedAt: new Date().toISOString() })
         })
         .catch((error: unknown) => {

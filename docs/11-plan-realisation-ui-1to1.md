@@ -65,17 +65,11 @@ Wireframe téléphone :
 5. Le budget d’animation est proportionnel à la surface de canvas et à la capacité mobile. Pause quand la vue est inactive; le mode 3D garde le relief sous le champ sans bloquer la sélection des feux.
 6. Validation: comparer plusieurs points du rendu aux valeurs source; vérifier 2D/3D, directions cardinales, vent nul, rafales, zoom extrême, ±180°, heure passée/suivante, réseau interrompu, mobile et animations réduites.
 
-### Prochain chantier concret — synchronisation UTC et intégrité du champ
+### Correctif UTC et intégrité du champ — implémenté, revue visuelle à compléter
 
-La vérification du code et du contrat Open-Meteo révèle un risque de fuseau : la requête précise `timezone=UTC`, mais la réponse horaire peut contenir des chaînes comme `2026-11-15T14:00` sans `Z` ni décalage. En JavaScript, `Date.parse()` interprète une telle heure sans décalage dans le fuseau local de l’appareil. C’est une inférence directe du format documenté et des appels `new Date(hour.time)` actuels; l’écart peut donc apparaître quand le navigateur n’est pas en UTC. [Documentation Open-Meteo — format et fuseau des horodatages](https://open-meteo.com/en/docs#api-documentation).
+Les réponses Open-Meteo demandées avec `timezone=UTC` peuvent fournir des heures sans suffixe. Elles sont maintenant normalisées en timestamps UTC canoniques avant d’être utilisées par le curseur, les vecteurs et les exports; les décalages explicites sont conservés. La grille n’est publiée que si elle contient tous les points demandés, des séries temporelles alignées, des coordonnées valides et des vitesses/directions dans leur domaine attendu. Une réponse invalide déclenche l’état d’erreur et l’action de réessai existante. [Documentation Open-Meteo — format et fuseau des horodatages](https://open-meteo.com/en/docs#api-documentation).
 
-| Ordre | Changement | Critère d’acceptation |
-|---:|---|---|
-| 1 | Ajouter un parseur partagé des heures de prévision : préserver un décalage explicite; interpréter comme UTC une heure ISO sans suffixe provenant d’une réponse demandée en UTC; garder une clé canonique stable pour joindre l’heure météo et les 25 vecteurs. | À fuseau navigateur UTC et America/Los_Angeles, une heure sélectionnée désigne le même instant et la même rangée de vecteurs; le curseur, la légende, le scénario et l’export indiquent cette heure en UTC. |
-| 2 | Valider la réponse de la grille avant de la publier : nombre de lieux égal aux coordonnées demandées; séries temporelles présentes, de même longueur et alignées entre nœuds; vitesses finies et non négatives; directions finies dans [0°, 360°]. Retourner un état d’erreur précis et proposer Réessayer si le contrat est incomplet. | Une réponse valide donne 25 nœuds au même instant; une réponse partielle ou désalignée ne dessine aucun champ trompeur et présente une cause lisible. |
-| 3 | Faire une revue de bout en bout du champ à travers le changement d’heure, le déplacement de carte et le mode réduit. Comparer la valeur source à plusieurs nœuds, puis vérifier l’interpolation entre eux et la couleur du raster contre la légende. | Même heure et mêmes vecteurs à chaque vue; aucune conversion d’heure locale; pas de traînée ou de raster stale pendant un rafraîchissement ou après un échec. |
-
-Ce chantier précède la progression Scénario : un curseur d’heure fiable et la provenance cohérente du vent sont des prérequis au calcul d’un modèle de propagation. La carte « what-if » restera une sensibilité météorologique explicitement hypothétique jusqu’à l’intégration d’un modèle validé avec ses carburants, son humidité, son périmètre daté et son jeu de validation.
+Le build TypeScript/Vite passe. La revue navigateur complète reste à faire pour confirmer les heures sélectionnées dans plusieurs fuseaux, les transitions d’emprise et le comportement en réponse partielle. Ce travail reste nécessaire avant d’étendre le scénario : la carte « what-if » demeure une sensibilité météorologique explicitement hypothétique, pas un modèle validé de propagation.
 
 ## Ordre de réalisation et livrables
 
