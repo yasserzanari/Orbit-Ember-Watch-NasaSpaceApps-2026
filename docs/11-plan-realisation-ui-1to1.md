@@ -287,3 +287,4 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 
 - Le panneau CWFIS de Calendar garde son échantillon Alberta west comme défaut, mais permet de demander une période passée choisie de 1 à 31 jours dans la même emprise. Les données et leur fenêtre sont effacées dès qu’on modifie les dates afin de ne pas attribuer l’ancien graphique au nouveau choix.
 - Le client expose maintenant les correspondances tronquées par la limite de 20 000 lignes et invite à réduire la période avant d’interpréter les totaux; la série des jours et ses étiquettes suit la fenêtre choisie.
+- Vérification : la fenêtre 2023-05-01 → 2023-05-31 a rendu 16 084 lignes CWFIS, cinq étiquettes de source, 31 jours et aucune troncature. La revue Chrome 1440 × 1000 a montré les deux champs de date et le résultat chargé; Chrome était limité à 6 cœurs sur 12. La capture a passé le contrôle CRC et le décodage complet.
