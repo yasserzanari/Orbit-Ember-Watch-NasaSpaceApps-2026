@@ -1604,6 +1604,29 @@ export function App() {
     <p className="module-hint">Wind shading shows forecast speed and animated streamlines show forecast direction. Neither is a fire-spread prediction.</p>
   </section> : <FieldReports location={location} wind={weather ? { speedKmh: weather.windSpeed, directionTo: windDirectionLabel(directionTo ?? 0), validAtUtc: weather.time } : null} />
   const isFieldMobile = active === 'Field Situation' && isMobileViewport
+  useEffect(() => {
+    if (!isFieldMobile) return
+    const workspace = document.querySelector<HTMLElement>('.field-situation-workspace')
+    if (!workspace) return
+    const toolbar = workspace.querySelector('.map-toolbar')
+    const safetyBanner = workspace.querySelector('.field-mobile-safety-banner')
+    const updateSheetTop = () => {
+      const workspaceTop = workspace.getBoundingClientRect().top
+      const contentBottom = Math.max(workspaceTop, toolbar?.getBoundingClientRect().bottom ?? workspaceTop, safetyBanner?.getBoundingClientRect().bottom ?? workspaceTop)
+      workspace.style.setProperty('--field-mobile-sheet-top', `${Math.ceil(contentBottom - workspaceTop + 8)}px`)
+    }
+    const observer = new ResizeObserver(updateSheetTop)
+    observer.observe(workspace)
+    if (toolbar) observer.observe(toolbar)
+    if (safetyBanner) observer.observe(safetyBanner)
+    window.addEventListener('resize', updateSheetTop)
+    updateSheetTop()
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateSheetTop)
+      workspace.style.removeProperty('--field-mobile-sheet-top')
+    }
+  }, [isFieldMobile])
   const moduleBody = active === 'Dashboard' ? dashboardPanel : active === 'Calendar' ? <CalendarWeekDetails selectedDate={calendarSelectedDate} observations={firms.observations} observationState={firms.state} days={firms.days} source={firms.source} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} coverageUnknown={archiveCoverageUnknown} unknownBeforeDate={unknownBeforeDate} unknownAfterDate={unknownAfterDate} /> : active === 'Live Map' ? null : active === 'Compare' ? <>
     <div className="panel-heading"><div><h2>Detection trends</h2><p>Daily returned records · UTC</p></div><Activity size={18} /></div>
     <p className="compare-intro">Each line shows observations returned by its own product for the selected area and dates.</p>

@@ -1295,3 +1295,27 @@
 @media (prefers-reduced-transparency: reduce) {
   .field-situation-workspace .inspector.field-mobile-inspector { background: #0d202b; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+@media (max-width: 760px) {
+  .sidebar:not(.sidebar-open) { overflow: hidden; }
+  .sidebar.sidebar-open { overflow-x: hidden; overflow-y: auto; }
+  .field-situation-shell .topbar { height: auto; min-height: 58px; flex: 0 0 auto; flex-wrap: wrap; row-gap: 5px; padding-block: 6px; }
+  .field-situation-shell .page-heading { min-width: 0; flex: 1 1 90px; }
+  .field-situation-shell .page-heading h1,
+  .field-situation-shell .page-heading span { overflow-wrap: anywhere; white-space: normal; }
+  .field-situation-shell .page-heading span { display: none; }
+  .field-situation-shell .global-controls { min-width: 0; max-width: 100%; flex: 0 1 auto; flex-wrap: wrap; }
+  .field-situation-workspace .map-toolbar { height: auto; min-height: 52px; flex-wrap: wrap; padding-block: 6px; }
+  .field-situation-workspace .map-title { flex: 1 1 140px; }
+  .field-situation-workspace .map-title>div { min-width: 0; }
+  .field-situation-workspace .map-title strong,
+  .field-situation-workspace .map-title small { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+  .field-situation-workspace .map-title small { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .field-situation-workspace .map-actions { flex: 0 1 auto; flex-wrap: wrap; }
+  .field-situation-workspace .inspector.field-mobile-inspector.expanded { top: var(--field-mobile-sheet-top, 102px); max-height: none; }
+  .field-situation-workspace .wind-speed-ticks>span:nth-child(2),
+  .field-situation-workspace .wind-speed-ticks>span:nth-child(3),
+  .field-situation-workspace .wind-speed-ticks>span:nth-child(4),
+  .field-situation-workspace .wind-speed-ticks>span:nth-child(5),
+  .field-situation-workspace .wind-speed-ticks>span:nth-child(7),
+  .field-situation-workspace .wind-speed-ticks>span:nth-child(8) { display: none; }
+}
