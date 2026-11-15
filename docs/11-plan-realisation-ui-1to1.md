@@ -58,12 +58,24 @@ Wireframe téléphone :
 
 ### Vent : contrat de rendu et de calcul
 
-1. Le backend récupère les composantes et paramètres horaires nécessaires sur une grille qui couvre la vue cartographique réelle. Il conserve heure valide, heure de récupération, source, variables et géométrie.
+1. Le client récupère les composantes et paramètres horaires nécessaires sur une grille de 5 × 5 qui couvre la vue cartographique réelle. Il conserve l’heure valide, l’heure de récupération, la source, les variables et la géométrie des 25 nœuds.
 2. La couche MapLibre projette la grille sur l’emprise et la caméra actuelles. La vitesse et la direction sont interpolées spatialement entre nœuds disponibles; le changement d’heure remplace la trame de manière explicite. Pour animer les traces, le cap est/nord interpolé est projeté localement à travers la caméra courante avant d’avancer les particules en pixels.
 3. Les rubans de particules suivent le vecteur local interpolé. La couleur code la vitesse selon une seule légende; l’espacement/longueur ne doit pas suggérer une durée ou une propagation du feu. Une animation statique directionnelle remplace les particules si `prefers-reduced-motion` est actif.
 4. Zoom, rotation, inclinaison, redimensionnement, déplacement et franchissement de l’antiméridien recalculent la couverture. Le forecast horaire et la grille viewport doivent appartenir au même lieu et à la même heure; pendant un changement de lieu, les anciennes valeurs météo sont retirées jusqu’à la réponse correspondante. Pendant le rafraîchissement d’emprise, l’ancien champ reste identifié comme dernier champ reçu; après erreur, aucune nouvelle valeur n’est inventée.
 5. Le budget d’animation est proportionnel à la surface de canvas et à la capacité mobile. Pause quand la vue est inactive; le mode 3D garde le relief sous le champ sans bloquer la sélection des feux.
 6. Validation: comparer plusieurs points du rendu aux valeurs source; vérifier 2D/3D, directions cardinales, vent nul, rafales, zoom extrême, ±180°, heure passée/suivante, réseau interrompu, mobile et animations réduites.
+
+### Prochain chantier concret — synchronisation UTC et intégrité du champ
+
+La vérification du code et du contrat Open-Meteo révèle un risque de fuseau : la requête précise `timezone=UTC`, mais la réponse horaire peut contenir des chaînes comme `2026-11-15T14:00` sans `Z` ni décalage. En JavaScript, `Date.parse()` interprète une telle heure sans décalage dans le fuseau local de l’appareil. C’est une inférence directe du format documenté et des appels `new Date(hour.time)` actuels; l’écart peut donc apparaître quand le navigateur n’est pas en UTC. [Documentation Open-Meteo — format et fuseau des horodatages](https://open-meteo.com/en/docs#api-documentation).
+
+| Ordre | Changement | Critère d’acceptation |
+|---:|---|---|
+| 1 | Ajouter un parseur partagé des heures de prévision : préserver un décalage explicite; interpréter comme UTC une heure ISO sans suffixe provenant d’une réponse demandée en UTC; garder une clé canonique stable pour joindre l’heure météo et les 25 vecteurs. | À fuseau navigateur UTC et America/Los_Angeles, une heure sélectionnée désigne le même instant et la même rangée de vecteurs; le curseur, la légende, le scénario et l’export indiquent cette heure en UTC. |
+| 2 | Valider la réponse de la grille avant de la publier : nombre de lieux égal aux coordonnées demandées; séries temporelles présentes, de même longueur et alignées entre nœuds; vitesses finies et non négatives; directions finies dans [0°, 360°]. Retourner un état d’erreur précis et proposer Réessayer si le contrat est incomplet. | Une réponse valide donne 25 nœuds au même instant; une réponse partielle ou désalignée ne dessine aucun champ trompeur et présente une cause lisible. |
+| 3 | Faire une revue de bout en bout du champ à travers le changement d’heure, le déplacement de carte et le mode réduit. Comparer la valeur source à plusieurs nœuds, puis vérifier l’interpolation entre eux et la couleur du raster contre la légende. | Même heure et mêmes vecteurs à chaque vue; aucune conversion d’heure locale; pas de traînée ou de raster stale pendant un rafraîchissement ou après un échec. |
+
+Ce chantier précède la progression Scénario : un curseur d’heure fiable et la provenance cohérente du vent sont des prérequis au calcul d’un modèle de propagation. La carte « what-if » restera une sensibilité météorologique explicitement hypothétique jusqu’à l’intégration d’un modèle validé avec ses carburants, son humidité, son périmètre daté et son jeu de validation.
 
 ## Ordre de réalisation et livrables
 
