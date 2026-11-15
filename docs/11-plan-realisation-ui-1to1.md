@@ -217,7 +217,7 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 
 - Le panneau bas mobile partagé par Map, Updates, Layers et Report utilise maintenant une surface translucide bleu pétrole avec un reflet turquoise léger, un liseré plus net et une poignée distincte. Les fiches de source, couches et rapports gardent des fonds plus denses afin de préserver leur contraste; les états de faible transparence peuvent revenir à une surface pleine.
 - Revue navigateur des quatre onglets à 390 × 844 : Map, Updates, Layers et Report ont été sélectionnés et capturés. Les quatre PNG ont passé la vérification CRC et le décodage complet; Chrome headless a été limité à 6 cœurs sur 12 puis fermé après la revue. Les filtres Updates sont accessibles, le toggle Vent et les couches en lecture seule sont clairs, le rapport garde une attribution locale et un formulaire focalisé.
-- Le formulaire Report reste plus long que la première hauteur visible du panneau; son contenu défile dans la fiche et la barre des onglets reste fixe. À revoir dans la prochaine passe : la longueur du formulaire, ainsi que les grandes tailles de texte et le clavier mobile.
+- Sur Report, l’ordre mobile place maintenant le formulaire juste après son en-tête; le bouton Save local note est visible dès l’ouverture. À 390 × 844, sa boîte est dans la zone visible (y = 573–619 px). Le statut de stockage, la localisation, le vent et les notes récentes suivent le formulaire et défilent dans le panneau; la barre des onglets reste fixe. Grandes tailles de texte et clavier mobile restent à revoir.
 - Vérification du code : `npm run build` réussi et `git diff --check` propre.
 
 ## Avancement — avertissement mobile toujours visible

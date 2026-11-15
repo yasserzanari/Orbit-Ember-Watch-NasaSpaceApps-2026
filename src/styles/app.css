@@ -1256,6 +1256,15 @@
 
 /* Field Situation sheet: a translucent command surface over the live map. */
 @media (max-width: 760px) {
+  .field-mobile-sheet-content { display: flex; flex-direction: column; }
+  .field-mobile-sheet-content>.field-report-form { order: 1; }
+  .field-mobile-sheet-content>.field-report-status { order: 2; }
+  .field-mobile-sheet-content>.field-map-status { order: 3; }
+  .field-mobile-sheet-content>.field-condition-grid { order: 4; }
+  .field-mobile-sheet-content>.field-reports-list-heading { order: 5; }
+  .field-mobile-sheet-content>.field-reports-list,
+  .field-mobile-sheet-content>.field-report-empty { order: 6; }
+  .field-mobile-sheet-content>.important-note.field-warning { order: 7; }
   .field-situation-workspace .inspector.field-mobile-inspector {
     border-color: rgba(165, 216, 222, .38);
     background:
