@@ -1372,21 +1372,37 @@ function CwfisHistoricalPilot() {
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [termsConfirmed, setTermsConfirmed] = useState(false)
   const [observations, setObservations] = useState<{ id: string; acquiredAtUtc: string; sensor: string; satellite: string; source: string; agency: string }[]>([])
+  const [startDate, setStartDate] = useState('2023-05-04')
+  const [endDate, setEndDate] = useState('2023-05-20')
+  const [matchedCount, setMatchedCount] = useState<number | null>(null)
+  const [truncated, setTruncated] = useState(false)
   const [message, setMessage] = useState('')
+  const todayUtc = new Date().toISOString().slice(0, 10)
+  const startTime = Date.parse(`${startDate}T00:00:00Z`)
+  const endTime = Date.parse(`${endDate}T00:00:00Z`)
+  const dayCount = Math.floor((endTime - startTime) / 86_400_000) + 1
+  const rangeValid = Number.isFinite(startTime) && Number.isFinite(endTime) && dayCount >= 1 && dayCount <= 31 && endDate <= todayUtc
+  const days = rangeValid ? Array.from({ length: dayCount }, (_, index) => shiftUtcDay(startDate, index)) : []
+  const updateRange = (nextStart: string, nextEnd: string) => {
+    setStartDate(nextStart); setEndDate(nextEnd); setState('idle'); setObservations([]); setMatchedCount(null); setTruncated(false); setMessage('')
+  }
   const load = async () => {
-    setState('loading'); setMessage('')
-    const params = new URLSearchParams({ bbox: '-116.2,52.9,-115.1,53.5', start: '2023-05-04', end: '2023-05-20' })
+    if (!rangeValid || !termsConfirmed) return
+    setState('loading'); setMessage(''); setObservations([]); setMatchedCount(null); setTruncated(false)
+    const params = new URLSearchParams({ bbox: '-116.2,52.9,-115.1,53.5', start: startDate, end: endDate })
     try {
       const response = await fetch(`/api/cwfis/hotspots?${params}`)
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.message || 'CWFIS historical context could not be loaded.')
-      setObservations(Array.isArray(payload.observations) ? payload.observations : [])
+      const rows = Array.isArray(payload.observations) ? payload.observations : []
+      setObservations(rows)
+      setMatchedCount(Number.isSafeInteger(payload.matchedCount) && payload.matchedCount >= 0 ? payload.matchedCount : rows.length)
+      setTruncated(Boolean(payload.truncated))
       setState('ready')
     } catch (error) {
       setState('error'); setMessage(error instanceof Error ? error.message : 'CWFIS historical context could not be loaded.')
     }
   }
-  const days = Array.from({ length: 17 }, (_, index) => shiftUtcDay('2023-05-04', index))
   const series = observations.reduce<Record<string, Record<string, number>>>((result, row) => {
     const family = `${row.sensor} · ${row.source}`
     const day = row.acquiredAtUtc.slice(0, 10)
@@ -1400,19 +1416,21 @@ function CwfisHistoricalPilot() {
   const seriesRows = Object.entries(series).map(([name, values]) => ({ name, values, total: Object.values(values).reduce((sum, count) => sum + count, 0) })).sort((a, b) => b.total - a.total)
   const max = Math.max(1, ...seriesRows.flatMap((row) => Object.values(row.values)))
   return <section className="cwfis-pilot-panel" aria-label="CWFIS historical regional context">
-    <header><div><span className="cwfis-kicker"><Database size={13} /> HISTORICAL CONTEXT · PUBLIC WFS</span><h2>Alberta west · May 4–20, 2023</h2><p>Regional hotspot sample near the Pembina Complex origin area · not a fire-specific perimeter match</p></div><button className="dashboard-load-button" onClick={() => void load()} disabled={state === 'loading' || !termsConfirmed}>{state === 'loading' ? 'Loading CWFIS…' : state === 'ready' ? 'Refresh history' : 'Load historical context'}</button></header>
+    <header><div><span className="cwfis-kicker"><Database size={13} /> HISTORICAL CONTEXT · PUBLIC WFS</span><h2>Alberta west · {startDate} → {endDate} UTC</h2><p>Regional hotspot sample near the Pembina Complex origin area · not a fire-specific perimeter match</p></div><button className="dashboard-load-button" onClick={() => void load()} disabled={state === 'loading' || !termsConfirmed || !rangeValid}>{state === 'loading' ? 'Loading CWFIS…' : state === 'ready' ? 'Refresh history' : 'Load historical context'}</button></header>
     <label className="cwfis-terms-confirm"><input type="checkbox" checked={termsConfirmed} onChange={(event) => setTermsConfirmed(event.target.checked)} /><span>Our team has reviewed the CWFIS End-User Agreement and confirmed this use is covered.</span><a href="https://scifv.scf.rncan.gc.ca/downloads/EUA/End_User_Agreement_gen_EN.html.php" target="_blank" rel="noreferrer">Review agreement</a></label>
+    <div className="cwfis-range-controls"><label htmlFor="cwfis-start-date">Start · UTC<input id="cwfis-start-date" type="date" value={startDate} max={endDate} onChange={(event) => updateRange(event.target.value, endDate)} disabled={state === 'loading'} /></label><label htmlFor="cwfis-end-date">End · UTC<input id="cwfis-end-date" type="date" value={endDate} min={startDate} max={todayUtc} onChange={(event) => updateRange(startDate, event.target.value)} disabled={state === 'loading'} /></label><small>{rangeValid ? `${dayCount} UTC days · maximum 31` : 'Choose a valid past window of 1–31 UTC days.'}</small></div>
     <div className="cwfis-provenance-note"><AlertTriangle size={14} /><span>CWFIS Fire M3 is a mixed-source contextual dataset, not raw NASA FIRMS or independent fire-perimeter truth. Missing dates have unknown coverage; counts are returned detection rows, not fire counts.</span></div>
     {state === 'error' && <p className="cwfis-error">{message}</p>}
+    {state === 'ready' && truncated && <p className="cwfis-error" role="status">The service matched {matchedCount?.toLocaleString() ?? 'more'} features but returned only {observations.length.toLocaleString()}. Narrow the date window before interpreting totals.</p>}
     {state === 'ready' && <>
-      <div className="cwfis-pilot-summary"><b>{observations.length.toLocaleString()}</b><span>returned rows</span><b>{Object.keys(sourceCounts).length}</b><span>source labels</span><small>May 4–20 UTC · 52.9–53.5°N, 116.2–115.1°W</small></div>
-      <div className="cwfis-series" aria-label="Daily CWFIS hotspot rows grouped by sensor and source label">{seriesRows.map(({ name, values }) => <div className={`cwfis-series-row ${name.toUpperCase().startsWith('MODIS') ? 'modis' : name.toUpperCase().startsWith('VIIRS') ? 'viirs' : ''}`} key={name}><b>{name}</b><div>{days.map((day) => { const count = values[day] ?? 0; return <i key={day} title={`${day} UTC · ${count ? `${count.toLocaleString()} rows` : 'no returned rows; coverage unknown'}`} style={{ height: `${count ? Math.max(4, count / max * 54) : 2}px` }} /> })}</div><small className="cwfis-series-total">{seriesRows.find((row) => row.name === name)?.total.toLocaleString()}</small></div>)}</div>
-      <div className="cwfis-day-labels">{days.map((day) => <span key={day}>{day.slice(8)}</span>)}</div>
+      <div className="cwfis-pilot-summary"><b>{observations.length.toLocaleString()}</b><span>returned rows</span><b>{Object.keys(sourceCounts).length}</b><span>source labels</span><small>{startDate} → {endDate} UTC · 52.9–53.5°N, 116.2–115.1°W</small></div>
+      <div className="cwfis-series" aria-label="Daily CWFIS hotspot rows grouped by sensor and source label">{seriesRows.map(({ name, values }) => <div className={`cwfis-series-row ${name.toUpperCase().startsWith('MODIS') ? 'modis' : name.toUpperCase().startsWith('VIIRS') ? 'viirs' : ''}`} key={name}><b>{name}</b><div style={{ gridTemplateColumns: `repeat(${days.length}, minmax(2px, 1fr))` }}>{days.map((day) => { const count = values[day] ?? 0; return <i key={day} title={`${day} UTC · ${count ? `${count.toLocaleString()} rows` : 'no returned rows; coverage unknown'}`} style={{ height: `${count ? Math.max(4, count / max * 54) : 2}px` }} /> })}</div><small className="cwfis-series-total">{seriesRows.find((row) => row.name === name)?.total.toLocaleString()}</small></div>)}</div>
+      <div className="cwfis-day-labels" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(2px, 1fr))` }}>{days.map((day) => <span key={day}>{day.slice(8)}</span>)}</div>
       <div className="cwfis-source-list"><b>Source provenance</b>{Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]).map(([source, count]) => <span key={source}>{source} <strong>{count.toLocaleString()}</strong></span>)}</div>
       <div className="cwfis-source-list"><b>Satellites / agencies</b>{Object.entries(satelliteCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([satellite, count]) => <span key={satellite}>{satellite} <strong>{count.toLocaleString()}</strong></span>)}{Object.keys(agencyCounts).sort().map((agency) => <span key={agency}>Agency {agency}</span>)}</div>
       <small className="cwfis-source-citation">Canadian Forest Service. 2020. <a href="https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/archive/fireM3_hotspots_metadata_NAP_ISO_19115_2003.pdf" target="_blank" rel="noreferrer">Canadian Wildland Fire Information System (CWFIS)</a>, Natural Resources Canada, Canadian Forest Service, Northern Forestry Centre, Edmonton, Alberta.</small>
     </>}
-    {state === 'idle' && <small className="cwfis-idle">Load this short historical window to explore separate MODIS and VIIRS daily records.</small>}
+    {state === 'idle' && <small className="cwfis-idle">Choose a date window up to 31 days. This Alberta sample explores historical source-labelled hotspot records.</small>}
   </section>
 }
 

@@ -975,7 +975,12 @@
 .cwfis-terms-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(177, 219, 224, .16); border-radius: 8px; background: rgba(4, 16, 24, .28); color: #bacbd0; font-size: 9px; line-height: 1.45; }
 .cwfis-terms-confirm input { accent-color: #45c9c2; }
 .cwfis-terms-confirm a { margin-left: auto; color: #8ee0db; }
+.cwfis-range-controls { display: grid; grid-template-columns: repeat(2, minmax(125px, 170px)) minmax(0, 1fr); align-items: end; gap: 8px; }
+.cwfis-range-controls label { display: grid; gap: 4px; color: #9eb3b9; font-size: 8px; }
+.cwfis-range-controls input { width: 100%; min-height: 31px; padding: 0 7px; border: 1px solid rgba(141,189,197,.24); border-radius: 6px; background: rgba(9,24,33,.82); color: #dce9eb; color-scheme: dark; font: 9px var(--font-data); }
+.cwfis-range-controls>small { align-self: center; color: #8fa8ae; font-size: 8px; }
 @media(max-width:760px) { .cwfis-terms-confirm a { margin-left: 25px; } }
+@media(max-width:760px) { .cwfis-range-controls { grid-template-columns: 1fr 1fr; gap: 6px; }.cwfis-range-controls>small { grid-column: 1/-1; } }
 
 /* Compare: keep sensor setup on the map, leaving the inspector for results. */
 .compare-workspace { grid-template-columns: minmax(0,1fr) 330px; }

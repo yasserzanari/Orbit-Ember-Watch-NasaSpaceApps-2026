@@ -282,3 +282,8 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 
 - Chaque nouvelle requête FIRMS efface immédiatement les observations et l’heure de récupération précédentes, en plus de ses anciennes métadonnées d’accès. Les points, courbes et comptes ne restent donc pas affichés sous la nouvelle fenêtre demandée pendant l’attente ou après une erreur.
 - Le chargement de Dashboard, Compare et des capteurs de Live Map partage ce hook; le changement s’applique uniformément à ces requêtes.
+
+## Avancement — choisir la fenêtre de contexte historique
+
+- Le panneau CWFIS de Calendar garde son échantillon Alberta west comme défaut, mais permet de demander une période passée choisie de 1 à 31 jours dans la même emprise. Les données et leur fenêtre sont effacées dès qu’on modifie les dates afin de ne pas attribuer l’ancien graphique au nouveau choix.
+- Le client expose maintenant les correspondances tronquées par la limite de 20 000 lignes et invite à réduire la période avant d’interpréter les totaux; la série des jours et ses étiquettes suit la fenêtre choisie.
