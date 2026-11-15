@@ -4,9 +4,8 @@ Le [brouillon de soumission et le pitch de 90 secondes](SUBMISSION-DRAFT.md) son
 
 ## Préparer la démo
 
-1. Lancer `npm run dev` et ouvrir l’application après le redémarrage du serveur.
-2. Choisir **Edmonton, Alberta**, **5 UTC days** et **VIIRS · NOAA‑20 · near real-time**.
-3. Charger les observations; les CSV publics NASA du Canada fonctionnent sans clé pour les sept derniers jours. Le nombre varie avec la date et les mises à jour de FIRMS.
+1. Lancer `npm run dev` et ouvrir l’application après le redémarrage du serveur. Le premier écran sélectionne **Edmonton, Alberta**, **5 UTC days** et **VIIRS · NOAA‑20 · near real-time**, comme le parcours de démo.
+2. Cliquer sur **Load observations**; les CSV publics NASA du Canada fonctionnent sans clé pour les sept derniers jours. Le nombre varie avec la date et les mises à jour de FIRMS.
 
 Pour tester le service sans navigateur :
 

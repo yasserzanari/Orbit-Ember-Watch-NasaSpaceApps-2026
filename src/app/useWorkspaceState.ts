@@ -29,6 +29,7 @@ export const workspaceLocations: WorkspaceLocation[] = [
   { name: 'Jasper, Alberta', lat: 52.8737, lon: -118.0814 },
   { name: 'Fort McMurray, Alberta', lat: 56.7268, lon: -111.3803 },
 ]
+const defaultWorkspaceLocation = workspaceLocations.find((location) => location.name === 'Edmonton, Alberta') ?? workspaceLocations[0]
 
 const views: WorkspaceView[] = ['Dashboard', 'Live Map', 'Calendar', 'Compare', 'Terrain', 'Data & Sources', 'Scenario', 'Field Situation']
 const firmsProducts: FirmsProduct[] = ['VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'VIIRS_SNPP_NRT', 'MODIS_NRT', 'VIIRS_NOAA20_SP', 'VIIRS_NOAA21_SP', 'VIIRS_SNPP_SP', 'MODIS_SP']
@@ -114,7 +115,7 @@ function readWorkspaceState(): WorkspaceState {
   const knownLocation = workspaceLocations.find((item) => item.name === name)
   const location = knownLocation ?? (lat !== null && lon !== null
     ? { name: name || `Map point · ${lat.toFixed(3)}°, ${lon.toFixed(3)}°`, lat, lon }
-    : workspaceLocations[0])
+    : defaultWorkspaceLocation)
 
   return {
     view: viewParam && views.includes(viewParam) ? viewParam : 'Dashboard',
@@ -126,7 +127,7 @@ function readWorkspaceState(): WorkspaceState {
     firmsProduct: productParam && firmsProducts.includes(productParam) ? productParam : firmsProducts[0],
     compareProductA: compareAParam && firmsProducts.includes(compareAParam) && compareAParam.startsWith('MODIS') ? compareAParam : 'MODIS_NRT',
     compareProductB: compareBParam && firmsProducts.includes(compareBParam) && compareBParam.startsWith('VIIRS') ? compareBParam : 'VIIRS_NOAA20_NRT',
-    firmsDays: firmsDayRanges.includes(daysParam) ? daysParam : 1,
+    firmsDays: firmsDayRanges.includes(daysParam) ? daysParam : 5,
     windVisible: params.get('wind') !== '0',
     // Start with the stable 2D basemap; shared links can explicitly request 3D with terrain=1.
     terrainEnabled: params.get('terrain') === '1',
