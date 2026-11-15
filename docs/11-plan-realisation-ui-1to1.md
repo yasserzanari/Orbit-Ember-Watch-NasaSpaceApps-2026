@@ -44,7 +44,7 @@ Wireframe téléphone :
 | `05-terrain.png` | Couches terrain à gauche; relief/selection au centre; fiche d’échantillon et profil A–B en bas. | DEM Terrarium, relief 3D, analyse locale et profil 25 points existent. A et B peuvent maintenant être placés sur la carte; la coupe suit le grand cercle entre ces points. | Garder composition du sol, combustible, végétation et eau indisponibles sans couche correspondante. Compléter l’identification, résolution, date et statut du DEM; valider les cas de transect court, long et traversant l’antiméridien. |
 | `06-sources.png` | Catalogue à gauche; carte de contexte; métadonnées/provenance et pipeline en bas. | Catalogue de cinq sources sélectionnable; fiche de métadonnées pour la source sélectionnée; toggles hotspots/vent/relief; footprint et swath déclarés sans source; pipeline dynamique acquisition → normalisation → agrégation quotidienne → manifestes. | Aligner les proportions du catalogue/carte/fiche à la référence; compléter dictionnaire natif, formats/licences et empreinte au niveau de la sélection, puis ajouter download/export uniquement sur données réellement disponibles. Les étapes restent bornées à l’état observé. |
 | `07-scenario-progression.png` | Entrées météo/terrain, carte de scénario, contrôles d’horizon et chronologie; incertitude lisible. | Contrôle what-if de vitesse et horizon présents; le panneau explique que le modèle, le périmètre et les carburants manquent et n’affiche aucune enveloppe synthétique. | La forme de la carte peut suivre la référence mais aucune progression ne sera dessinée avant l’intégration et la validation d’un modèle de comportement du feu, des carburants, de l’humidité, du périmètre et de vents cohérents. Pas d’ordres d’attaque ni de points tactiques automatiques. |
-| `08-mobile-terrain.png` | Carte tactile; bandeau d’incertitude; panneau bas Area Awareness; navigation Map / Updates / Layers / Report. | Route mobile et quatre vues dédiées existent; note locale, filtres accessibles et météo sont disponibles. | Comparer chaque sous-vue à la référence aux largeurs 360/390 px; garder le vent et l’état des données visibles sans masquer les contrôles de carte; vérifier clavier/lecteur d’écran, grands textes et réduction d’animation. Ne pas demander la position GPS implicitement. |
+| `08-mobile-terrain.png` | Carte tactile; bandeau d’incertitude; panneau bas Area Awareness; navigation Map / Updates / Layers / Report. | Route mobile et quatre vues dédiées existent; note locale, filtres accessibles, météo et panneau bas repliable avec commande clavier/tactile sont disponibles. | Comparer chaque sous-vue à la référence aux largeurs 360/390 px; garder le vent et l’état des données visibles sans masquer les contrôles de carte; vérifier clavier/lecteur d’écran, grands textes et réduction d’animation. Ne pas demander la position GPS implicitement. |
 
 ## Données et vérité de l’interface
 
@@ -206,6 +206,12 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - La direction météorologique reste calculée comme composantes est/nord en km/h. Avant le déplacement visuel des particules, cette direction est maintenant projetée localement avec le transform MapLibre courant; les caps suivent donc bearing et pitch au lieu d’être assimilés aux axes écran.
 - La cadence des particules reste une convention graphique et n’est pas une vitesse de déplacement au sol ni une durée de propagation. Les valeurs physiques sont portées par le raster et la légende km/h.
 - Vérification : build et diff à vérifier; comparer des caps cardinaux sur caméra nord, carte tournée et relief incliné dans un navigateur.
+
+## Avancement — panneau tactile Field Situation
+
+- La poignée visible du panneau mobile est devenue un vrai bouton accessible avec `aria-expanded`/`aria-controls`. Le panneau s’ouvre davantage en sélectionnant Updates, Layers ou Report et reste plus compact sur Map; l’utilisateur peut changer cette hauteur avec le bouton.
+- Le scroll est limité au contenu de la fiche, la commande de hauteur reste visible et la barre de navigation basse conserve sa zone tactile.
+- Vérification : build TypeScript/Vite et `git diff --check` à effectuer; comparer hauteur, scroll et zones tactiles sur 360 × 800 et 390 × 844 px.
 
 ## Avancement — échelle vent cohérente avec le raster
 
