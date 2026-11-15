@@ -1580,8 +1580,13 @@ export function App() {
   const moduleTitle = active === 'Field Situation' ? 'Field Situation' : active
   const openSelectedSourceInCompare = () => {
     const product = firms.source as FirmsProduct
-    setCompareSourceA(product)
-    setCompareSourceB(product.startsWith('MODIS') ? 'VIIRS_NOAA20_NRT' : 'MODIS_NRT')
+    if (product.startsWith('MODIS')) {
+      setCompareSourceA(product)
+      setCompareSourceB('VIIRS_NOAA20_NRT')
+    } else {
+      setCompareSourceA('MODIS_NRT')
+      setCompareSourceB(product)
+    }
     setActive('Compare')
   }
   const liveMapDock = <section className={`live-map-dock ${liveDockCollapsed ? 'collapsed' : ''}`} aria-label="Live Map layers and filters">
