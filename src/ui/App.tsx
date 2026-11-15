@@ -760,7 +760,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       },
       center: [lon, lat],
       zoom: 6.2,
-      pitch: 62,
+      pitch: 40,
       bearing: -12,
       maxPitch: 78,
       attributionControl: false,
@@ -927,7 +927,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     if (!instance) return
     const applyTerrain = () => {
       instance.setTerrain(terrainEnabled ? { source: 'albertaDem', exaggeration: 1.2 } : null)
-      instance.easeTo({ pitch: terrainEnabled ? 62 : 0, duration: 900 })
+      instance.easeTo({ pitch: terrainEnabled ? 40 : 0, duration: 900 })
     }
     return whenMapStyleReady(instance, applyTerrain)
   }, [terrainEnabled])
