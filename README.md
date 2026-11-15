@@ -21,7 +21,7 @@ npm run dev
 
 `npm run dev` lance le frontend et l’API locale. Pour servir la version compilée avec l’API FIRMS : `npm run build`, puis `npm start`.
 
-Avant une livraison, vérifier le build et le serveur de production local avec `npm run build && npm run smoke:local`. Le smoke check démarre un serveur isolé sur un port libre; il vérifie l’accueil compilé, le contrôle de santé, le catalogue local, le refus d’une clé FIRMS dans l’URL et le verrou d’accord CWFIS sans appeler NASA ou CWFIS.
+Avant une livraison, vérifier le build et le serveur de production local avec `npm run build && npm run smoke:local`. Le smoke check démarre un serveur isolé sur un port libre; il vérifie l’accueil compilé, le contrôle de santé, le catalogue local, le refus d’une clé FIRMS dans l’URL et le verrou d’accord CWFIS sans appeler NASA ou CWFIS. Pour valider aussi l’accès réseau réel au flux NASA Canada VIIRS, lancer `npm run smoke:local -- --live`; cette vérification séparée nécessite Internet et accepte un résultat de zéro détection.
 
 Sans clé, le serveur peut charger les CSV publics FIRMS des sept derniers jours pour MODIS et VIIRS NOAA‑20/NOAA‑21 au Canada. Une archive NASA locale importée et acceptée par le pipeline peut aussi servir des fenêtres datées sans clé; son absence de détections ne prouve pas une absence de feu. Sans archive correspondante, les fenêtres historiques, l’API Area et l’API de disponibilité demandent une MAP_KEY gratuite : la demander sur [le portail officiel NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/api/map_key/), copier `.env.example` vers `.env`, puis renseigner `FIRMS_MAP_KEY`. La clé reste côté serveur; ne jamais la préfixer par `VITE_`, la committer ou la coller dans une conversation.
 

@@ -68,6 +68,26 @@ try {
   assert.equal(cwfisResponse.status, 403)
   assert.equal((await cwfisResponse.json()).code, 'cwfis_terms_not_confirmed')
   console.log('PASS CWFIS endpoint is gated when agreement is not confirmed')
+
+  if (process.argv.includes('--live')) {
+    const query = new URLSearchParams({
+      source: 'VIIRS_NOAA20_NRT',
+      bbox: '-115.5938,52.1461,-111.3938,54.9461',
+      days: '5',
+    })
+    const liveResponse = await fetch(`http://127.0.0.1:${port}/api/firms?${query}`, { signal: AbortSignal.timeout(25_000) })
+    const livePayload = await liveResponse.json()
+    assert.equal(liveResponse.status, 200, JSON.stringify(livePayload))
+    assert.equal(livePayload.source, 'VIIRS_NOAA20_NRT')
+    assert.equal(livePayload.accessMode, 'public-nrt-canada-csv')
+    assert.ok(Array.isArray(livePayload.observations))
+    assert.ok(livePayload.sourceDateRange?.minDate && livePayload.sourceDateRange?.maxDate)
+    for (const row of livePayload.observations) {
+      assert.ok(Number.isFinite(row.latitude) && Number.isFinite(row.longitude))
+      assert.ok(typeof row.acquiredAtUtc === 'string' && row.acquiredAtUtc.endsWith('Z'))
+    }
+    console.log(`PASS live NASA Canada VIIRS feed (${livePayload.observations.length} returned rows; ${livePayload.coverageState} coverage state)`)
+  }
 } finally {
   child.kill('SIGTERM')
   await new Promise((resolve) => {
