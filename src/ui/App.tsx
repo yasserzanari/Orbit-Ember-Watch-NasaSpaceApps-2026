@@ -6,6 +6,8 @@ import { useWorkspaceState, workspaceLocations } from '../app/useWorkspaceState'
 import type { FirmsProduct, WorkspaceView } from '../app/useWorkspaceState'
 import { FieldReports } from './FieldReports'
 import { CommonGridPreview } from './CommonGridPreview'
+import { commonGridGeoJson, summarizeCommonGrid } from '../app/commonGrid'
+import type { CommonGridFeatureCollection } from '../app/commonGrid'
 import { terrainAspectLabel, terrainTransectCoordinates, useTerrainAnalysis } from '../app/useTerrainAnalysis'
 import type { TerrainAnalysis, TerrainEndpoints } from '../app/useTerrainAnalysis'
 import {
@@ -707,7 +709,7 @@ function whenMapStyleReady(instance: MapLibreMap, callback: () => void) {
   return () => instance.off('style.load', onStyleLoad)
 }
 
-function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windState, onRetryWind, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, onCameraChange, syncGroup, terrainTransect, terrainTransectSelecting = false, onTerrainTransectPoint }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windState: WindFieldState['state']; onRetryWind: () => void; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; onCameraChange: (viewport: WindViewport) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][]; terrainTransectSelecting?: boolean; onTerrainTransectPoint?: (point: [number, number]) => void }) {
+function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime, windState, onRetryWind, windVisible, terrainEnabled, onSelectPoint, onSelectObservation, onCameraChange, syncGroup, terrainTransect, terrainTransectSelecting = false, onTerrainTransectPoint, commonGridData }: { lat: number; lon: number; windDirection?: number; observations: FireObservation[]; windNodes: WindNode[]; windTime?: string; windState: WindFieldState['state']; onRetryWind: () => void; windVisible: boolean; terrainEnabled: boolean; onSelectPoint: (point: MapPoint) => void; onSelectObservation: (observation: FireObservation | null) => void; onCameraChange: (viewport: WindViewport) => void; syncGroup?: MapSyncGroup; terrainTransect?: [number, number][]; terrainTransectSelecting?: boolean; onTerrainTransectPoint?: (point: [number, number]) => void; commonGridData?: CommonGridFeatureCollection }) {
   const element = useRef<HTMLDivElement>(null)
   const windFlowCanvas = useRef<HTMLCanvasElement>(null)
   const map = useRef<MapLibreMap | null>(null)
@@ -721,12 +723,14 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
   const observationsRef = useRef(observations)
   const windNodesRef = useRef(windNodes)
   const windTimeRef = useRef(windTime)
+  const commonGridRef = useRef(commonGridData)
   useEffect(() => { selectPoint.current = onSelectPoint }, [onSelectPoint])
   useEffect(() => { selectObservation.current = onSelectObservation }, [onSelectObservation])
   useEffect(() => { reportCamera.current = onCameraChange }, [onCameraChange])
   useEffect(() => { selectTerrainTransectPoint.current = onTerrainTransectPoint; selectingTerrainTransect.current = terrainTransectSelecting }, [onTerrainTransectPoint, terrainTransectSelecting])
   useEffect(() => { observationsRef.current = observations }, [observations])
   useEffect(() => { windNodesRef.current = windNodes; windTimeRef.current = windTime }, [windNodes, windTime])
+  useEffect(() => { commonGridRef.current = commonGridData }, [commonGridData])
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
     const syncPreference = () => setReducedMotion(preference.matches)
@@ -787,6 +791,15 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       map.current?.addLayer({
         id: 'alberta-hillshade', type: 'hillshade', source: 'albertaDem',
         paint: { 'hillshade-exaggeration': 0.32, 'hillshade-shadow-color': '#091a25', 'hillshade-highlight-color': '#a3c9be' },
+      })
+      map.current?.addSource('compare-common-grid', { type: 'geojson', data: commonGridRef.current ?? { type: 'FeatureCollection', features: [] } })
+      map.current?.addLayer({
+        id: 'compare-common-grid-fill', type: 'fill', source: 'compare-common-grid',
+        paint: { 'fill-color': ['match', ['get', 'category'], 'modis', '#f4b12f', 'viirs', '#38d2d7', '#e7f3ed'], 'fill-opacity': 0.32 },
+      })
+      map.current?.addLayer({
+        id: 'compare-common-grid-outline', type: 'line', source: 'compare-common-grid',
+        paint: { 'line-color': ['match', ['get', 'category'], 'modis', '#ffd36b', 'viirs', '#8af4ef', '#f4fff9'], 'line-width': 1.1, 'line-opacity': 0.82 },
       })
       if (windNodesRef.current.length) ensureWindLayers(map.current!)
       map.current?.addSource('terrain-transect', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
@@ -911,6 +924,14 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     }
     return whenMapStyleReady(map.current, syncLayer)
   }, [observations])
+
+  useEffect(() => {
+    const syncGrid = () => {
+      const source = map.current?.getSource('compare-common-grid') as GeoJSONSource | undefined
+      source?.setData(commonGridData ?? { type: 'FeatureCollection', features: [] })
+    }
+    if (map.current) return whenMapStyleReady(map.current, syncGrid)
+  }, [commonGridData])
 
   useEffect(() => {
     const instance = map.current
@@ -1539,6 +1560,7 @@ export function App() {
   const [horizon, setHorizon] = useState(6)
   const [compareMode, setCompareMode] = useState<'swipe' | 'side-by-side'>('swipe')
   const [compareSplit, setCompareSplit] = useState(50)
+  const [commonGridVisible, setCommonGridVisible] = useState(true)
   const [transectVisible, setTransectVisible] = useState(true)
   const [terrainRefresh, setTerrainRefresh] = useState(0)
   const [elevation, setElevation] = useState<{ value: number; state: 'loading' | 'ready' | 'error' }>({ value: 0, state: 'loading' })
@@ -1836,6 +1858,9 @@ export function App() {
     : compareA.state === 'ready' && compareB.state === 'ready'
       ? compareSameWindow ? 'ready' : 'mismatch'
       : 'loading'
+  const commonGridMapData = useMemo(() => commonGridState === 'ready' && commonGridVisible
+    ? commonGridGeoJson(summarizeCommonGrid(compareA.observations, compareB.observations, { latitude: location.lat, longitude: location.lon }))
+    : undefined, [commonGridState, commonGridVisible, compareA.observations, compareB.observations, location.lat, location.lon])
   const moduleBody = active === 'Dashboard' ? dashboardPanel : active === 'Calendar' ? <CalendarWeekDetails selectedDate={calendarSelectedDate} observations={firms.observations} observationState={firms.state} days={firms.days} source={firms.source} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} coverageUnknown={archiveCoverageUnknown} unknownBeforeDate={unknownBeforeDate} unknownAfterDate={unknownAfterDate} /> : active === 'Live Map' ? null : active === 'Compare' ? <>
     <div className="panel-heading"><div><h2>Detection trends</h2><p>Daily returned records · UTC</p></div><Activity size={18} /></div>
     <p className="compare-intro">Each line shows observations returned by its own product for the selected area and dates.</p>
@@ -1898,14 +1923,16 @@ export function App() {
               <header><span className="compare-dock-icon"><Layers3 size={15} /></span><div><b>Compare sensors</b><small>Same area · same UTC window</small></div></header>
               <span className="compare-mode-label">COMPARISON VIEW</span>
               <div className="compare-mode-control compare-dock-mode-control" role="group" aria-label="Comparison map layout"><button className={compareMode === 'swipe' ? 'selected' : ''} onClick={() => setCompareMode('swipe')} aria-pressed={compareMode === 'swipe'}>↔ Swipe</button><button className={compareMode === 'side-by-side' ? 'selected' : ''} onClick={() => setCompareMode('side-by-side')} aria-pressed={compareMode === 'side-by-side'}>▥ Side-by-side</button></div>
+              <button type="button" className={`compare-grid-toggle ${commonGridVisible ? 'selected' : ''}`} aria-pressed={commonGridVisible} onClick={() => setCommonGridVisible((visible) => !visible)}><Layers3 size={13} /> {commonGridVisible ? 'Hide common grid' : 'Show common grid'}</button>
               <div className="compare-source-control modis"><label htmlFor="compare-source-a"><span><i /> Sensor A · MODIS</span><select id="compare-source-a" value={compareSourceA} onChange={(event) => setCompareSourceA(event.target.value as FirmsProduct)}>{firmsSources.filter((item) => item.id.startsWith('MODIS')).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><div><span className={`compare-state-dot ${compareA.state}`} />{compareA.state === 'ready' ? `${compareA.observations.length.toLocaleString()} rows returned` : compareA.state === 'error' ? 'Request unavailable · retry' : compareA.state === 'loading' ? 'Requesting NASA FIRMS…' : compareA.publicFeedAvailable ? 'Public Canada feed · latest 7 days' : compareA.configured === false ? 'No key · matching local archive may be available' : 'Ready to load'}</div><button className="primary-action" onClick={() => void compareA.load()} disabled={compareA.state === 'loading'}>{compareA.state === 'loading' ? <><span className="spinner" /> Loading MODIS…</> : <><RefreshCw size={13} /> {compareA.state === 'error' ? 'Retry MODIS' : compareA.state === 'ready' ? 'Refresh MODIS' : 'Load MODIS'}</>}</button></div>
               <div className="compare-source-control viirs"><label htmlFor="compare-source-b"><span><i /> Sensor B · VIIRS</span><select id="compare-source-b" value={compareSourceB} onChange={(event) => setCompareSourceB(event.target.value as FirmsProduct)}>{firmsSources.filter((item) => item.id.startsWith('VIIRS')).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><div><span className={`compare-state-dot ${compareB.state}`} />{compareB.state === 'ready' ? `${compareB.observations.length.toLocaleString()} rows returned` : compareB.state === 'error' ? 'Request unavailable · retry' : compareB.state === 'loading' ? 'Requesting NASA FIRMS…' : compareB.publicFeedAvailable ? 'Public Canada feed · latest 7 days' : compareB.configured === false ? 'No key · matching local archive may be available' : 'Ready to load'}</div><button className="primary-action" onClick={() => void compareB.load()} disabled={compareB.state === 'loading'}>{compareB.state === 'loading' ? <><span className="spinner" /> Loading VIIRS…</> : <><RefreshCw size={13} /> {compareB.state === 'error' ? 'Retry VIIRS' : compareB.state === 'ready' ? 'Refresh VIIRS' : 'Load VIIRS'}</>}</button></div>
               <p>Products remain separate. Select a point on the map to inspect its native satellite attributes.</p>
             </section>
             <div className="compare-map-a"><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareA.observations} windNodes={windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
-            <div className="compare-map-b" style={compareMode === 'swipe' ? { clipPath: `inset(0 0 0 ${compareSplit}%)` } : undefined}><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareB.observations} windNodes={windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} /></div>
+            <div className="compare-map-b" style={compareMode === 'swipe' ? { clipPath: `inset(0 0 0 ${compareSplit}%)` } : undefined}><MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={compareB.observations} windNodes={windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} syncGroup={compareMapSync.current} commonGridData={commonGridMapData} /></div>
             {compareMode === 'swipe' && <><div className="compare-swipe-divider" style={{ left: `${compareSplit}%` }} aria-hidden="true"><span>↔</span></div><input className="compare-swipe-input" type="range" min="15" max="85" value={compareSplit} onChange={(event) => setCompareSplit(Number(event.target.value))} aria-label="Adjust comparison divider" /></>}
             <div className="compare-map-chip modis"><i />{compareSourceA.replaceAll('_', ' ')} · {compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : compareA.state.toUpperCase()}</div><div className="compare-map-chip viirs"><i />{compareSourceB.replaceAll('_', ' ')} · {compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : compareB.state.toUpperCase()}</div>
+            {commonGridVisible && commonGridState === 'ready' && commonGridMapData && commonGridMapData.features.length > 0 && <div className="compare-grid-legend" aria-label="Common grid legend"><b>Returned detections · 1 km cells</b><span><i className="modis" />MODIS only in period</span><span><i className="viirs" />VIIRS only in period</span><span><i className="both" />Both products in period</span><small>Up to 4,000 busiest cells · shared UTC dates · not fire identity</small></div>}
           </div> : <MapCanvas lat={location.lat} lon={location.lon} windDirection={weather?.windDirectionFrom} observations={visibleObservations} windNodes={active === 'Scenario' ? scenarioWindNodes : windField.nodes} windTime={weather?.time} windState={windField.state} onRetryWind={windField.retry} windVisible={windVisible} terrainEnabled={isFieldMobile ? false : terrainEnabled} onSelectPoint={setLocation} onSelectObservation={selectObservation} onCameraChange={updateWindViewport} terrainTransect={active === 'Terrain' && transectVisible ? terrainTransect : undefined} terrainTransectSelecting={active === 'Terrain' && terrainTransectPointTarget !== null} onTerrainTransectPoint={selectTerrainTransectPoint} />}
           {active === 'Live Map' && liveMapDock}
           {active === 'Data & Sources' && <section className={`source-catalog-dock ${sourceDockCollapsed ? 'collapsed' : ''}`} aria-label="Source catalog and map layers">

@@ -32,6 +32,12 @@ export type CommonGridSummary = {
   rows: CommonGridRow[]
 }
 
+export type CommonGridFeatureCollection = GeoJSON.FeatureCollection<GeoJSON.Polygon, {
+  modisDetections: number
+  viirsDetections: number
+  category: 'modis' | 'viirs' | 'both'
+}>
+
 const EARTH_RADIUS_M = 6_371_008.8
 const DEFAULT_RESOLUTION_M = 1_000
 
@@ -100,6 +106,39 @@ export function summarizeCommonGrid(
   }
 }
 
+/** Build one polygon per 1 km cell with returned rows during shared UTC dates. */
+export function commonGridGeoJson(summary: CommonGridSummary, maxCells = 4_000): CommonGridFeatureCollection {
+  const cells = new Map<string, { east: number; north: number; modis: number; viirs: number }>()
+  for (const row of summary.rows) {
+    const key = `${row.cellEastIndex}|${row.cellNorthIndex}`
+    const cell = cells.get(key) ?? { east: row.cellEastIndex, north: row.cellNorthIndex, modis: 0, viirs: 0 }
+    cell.modis += row.modisDetections
+    cell.viirs += row.viirsDetections
+    cells.set(key, cell)
+  }
+  const selected = [...cells.values()].sort((a, b) => (b.modis + b.viirs) - (a.modis + a.viirs)).slice(0, maxCells)
+  return {
+    type: 'FeatureCollection',
+    features: selected.map((cell) => {
+      const west = cell.east * summary.resolutionM
+      const south = cell.north * summary.resolutionM
+      const east = west + summary.resolutionM
+      const north = south + summary.resolutionM
+      const ring = [[west, south], [east, south], [east, north], [west, north], [west, south]]
+        .map(([x, y]) => inverseLambertAzimuthalEqualArea(x, y, summary.centerLatitude, summary.centerLongitude))
+      return {
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [ring] },
+        properties: {
+          modisDetections: cell.modis,
+          viirsDetections: cell.viirs,
+          category: cell.modis && cell.viirs ? 'both' : cell.modis ? 'modis' : 'viirs',
+        },
+      }
+    }),
+  }
+}
+
 function restrictToDays(cells: Map<string, { count: number; satellites: Set<string> }>, days: Set<string>) {
   const eligibleCells = new Map([...cells].filter(([key]) => days.has(key.split('|', 1)[0])))
   const eligibleDetections = [...eligibleCells.values()].reduce((sum, cell) => sum + cell.count, 0)
@@ -152,4 +191,15 @@ function projectLambertAzimuthalEqualArea(latitude: number, longitude: number, c
   const east = EARTH_RADIUS_M * scale * Math.cos(phi) * Math.sin(deltaLambda)
   const north = EARTH_RADIUS_M * scale * (Math.cos(phi0) * Math.sin(phi) - Math.sin(phi0) * Math.cos(phi) * Math.cos(deltaLambda))
   return [east, north]
+}
+
+function inverseLambertAzimuthalEqualArea(east: number, north: number, centerLatitude: number, centerLongitude: number): [number, number] {
+  const phi0 = centerLatitude * Math.PI / 180
+  const lambda0 = centerLongitude * Math.PI / 180
+  const rho = Math.hypot(east, north)
+  if (rho < 1e-8) return [centerLongitude, centerLatitude]
+  const c = 2 * Math.asin(Math.min(1, rho / (2 * EARTH_RADIUS_M)))
+  const phi = Math.asin(Math.cos(c) * Math.sin(phi0) + (north * Math.sin(c) * Math.cos(phi0)) / rho)
+  const lambda = lambda0 + Math.atan2(east * Math.sin(c), rho * Math.cos(phi0) * Math.cos(c) - north * Math.sin(phi0) * Math.sin(c))
+  return [lambda * 180 / Math.PI, phi * 180 / Math.PI]
 }

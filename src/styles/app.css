@@ -1023,6 +1023,15 @@
 .compare-control-dock .compare-source-control select { padding: 8px; border-color: rgba(161,202,209,.24); border-radius: 7px; background: rgba(5,17,26,.76); color: #e4eef0; font-size: 10px; }
 .compare-control-dock .compare-source-control>div { min-height: 16px; color: #b4c6cb; font-size: 9px; }
 .compare-control-dock .compare-source-control .primary-action { min-height: 36px; border-color: rgba(244,177,47,.3); border-radius: 8px; background: rgba(244,177,47,.085); color: #f3d38e; font-size: 10px; font-weight: 600; }
+.compare-grid-toggle { display: flex; min-height: 32px; align-items: center; justify-content: center; gap: 7px; border: 1px solid rgba(142,193,202,.22); border-radius: 8px; background: rgba(7,20,29,.58); color: #b5c8cd; font-size: 9px; cursor: pointer; transition: .18s ease; }
+.compare-grid-toggle:hover,.compare-grid-toggle.selected { border-color: rgba(56,210,215,.5); background: rgba(37,210,216,.1); color: #a8f3ef; }
+.compare-grid-legend { position: absolute; z-index: 7; right: 12px; bottom: 78px; display: grid; gap: 7px; min-width: 158px; padding: 11px 12px; border: 1px solid rgba(180,225,228,.25); border-radius: 11px; background: rgba(7,20,29,.84); color: #d9e7e9; box-shadow: 0 10px 28px #0005, inset 0 1px 0 #efffff14; -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%); font-size: 9px; }
+.compare-grid-legend b { margin-bottom: 1px; color: #f0f7f7; font-size: 9px; font-weight: 600; }
+.compare-grid-legend span { display: flex; align-items: center; gap: 7px; color: #c1d1d4; }
+.compare-grid-legend i { width: 11px; height: 11px; border: 1px solid #ffffff88; border-radius: 3px; background: #f4b12f88; }
+.compare-grid-legend i.viirs { background: #38d2d788; }
+.compare-grid-legend i.both { background: #e7f3edbb; }
+.compare-grid-legend small { padding-top: 5px; border-top: 1px solid #d3eff01b; color: #94abb1; font-size: 8px; }
 .compare-control-dock .compare-source-control.viirs .primary-action { border-color: rgba(37,210,216,.32); background: rgba(37,210,216,.1); color: #9af0eb; }
 .compare-control-dock>p { margin: 0; padding: 2px 3px 0; color: #9bb1b8; font-size: 9px; line-height: 1.45; }
 .compare-workspace .inspector { border-color: rgba(167,220,226,.24); background: rgba(9,22,32,.78); -webkit-backdrop-filter: blur(22px) saturate(145%); backdrop-filter: blur(22px) saturate(145%); }
