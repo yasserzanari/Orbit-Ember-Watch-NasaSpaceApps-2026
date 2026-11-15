@@ -223,3 +223,10 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 
 - L’échelle affichait ses repères à intervalles égaux malgré des valeurs irrégulières (0–100 par pas de 10, puis 150 et 200), et son endpoint 200+ était cyan alors que le raster interpolé utilise un bleu-vert sombre. Les repères sont maintenant placés selon la vitesse linéaire 0–200 km/h et les couleurs du dégradé correspondent aux arrêts de `windSpeedColor`.
 - Vérification : `npm run build` réussi et `git diff --check` propre. La capture navigateur a échoué avant la création d’un PNG exploitable; aucun fichier de capture n’est réutilisé.
+
+## Avancement — finition vitrée du résumé Dashboard
+
+- Le panneau « Area activity » laisse davantage transparaître la carte sous son verre dépoli, avec un liseré plus lumineux, un reflet froid et une lueur ambre limitée à l’identité feu et aux observations. Les surfaces de contexte sont plus légères; l’action principale garde un contraste net et un retour tactile.
+- Les tailles étroites conservent un flou réduit pour limiter le coût de composition. Le léger changement de bordure au survol s’éteint avec `prefers-reduced-motion`; les états de données et leurs avertissements ne changent pas.
+- Revue navigateur au format 1238 × 1113, 390 × 844 et 360 × 800. Les captures dédiées ont passé la vérification CRC et le décodage complet PNG; Chrome headless a été limité à 6 cœurs sur 12 puis fermé à la fin de chaque capture. Sur téléphone, le panneau est resserré à 208 px pour garder les commandes 3D et Vent dégagées; les statuts et le titre restent visibles, le contenu de provenance peut se tronquer sur une seule ligne.
+- Vérification : `npm run build` réussi et `git diff --check` propre. La météo n’était pas disponible pendant les captures; le panneau l’a signalé et aucun chiffre météo n’a été inventé.
