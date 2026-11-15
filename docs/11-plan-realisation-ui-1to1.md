@@ -294,3 +294,8 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Le panneau historique exporte maintenant les lignes réellement retournées, avec date/coordonnées et les attributs `source`, `sensor`, `satellite` et `agency`. Chaque ligne répète les bornes demandées, le nombre de correspondances/résultats, le statut de troncature, l’état de couverture inconnue, la source WFS et l’attribution CWFIS complète.
 - Le nom et le guide d’utilisation identifient l’export comme CWFIS Fire M3 composite, distinct d’une archive FIRMS NASA brute.
 - Vérification navigateur sous Chrome limité à 6 cœurs : export de l’échantillon de mai 2023 de 16 084 lignes, avec 16 champs avant l’ajout de l’attribution à chaque ligne. Le CSV de 3,52 MB contient `matched_feature_count=16084`, `truncated=false`, `coverage_state=unknown` et les coordonnées/provenances de la première ligne. Après l’ajout du champ `source_attribution`, `npm run build` et `git diff --check` réussissent.
+
+## Avancement — résultats CWFIS visibles dans Calendar
+
+- Quand **Historical sample** est ouvert sur écran large, la grille du workspace réserve maintenant davantage de hauteur au panneau historique et réduit la carte; les séries restent accessibles sans scroll interne au départ.
+- Vérification navigateur 1440 × 1000, Chrome limité à 6 cœurs : le panneau chargé mesurait 475 px; son résumé et ses séries tenaient dans le viewport sans défilement. L’échantillon affichait 15 457 lignes, cinq étiquettes de source, aucune troncature et `coverageState: unknown`. Le smoke check local passe après le changement.
