@@ -1368,6 +1368,8 @@ function shiftUtcMonth(month: string, offset: number) {
   return date.toISOString().slice(0, 7)
 }
 
+const cwfisAttribution = 'Canadian Forest Service. 2020. Canadian Wildland Fire Information System (CWFIS), Natural Resources Canada, Canadian Forest Service, Northern Forestry Centre, Edmonton, Alberta.'
+
 function CwfisHistoricalPilot() {
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [termsConfirmed, setTermsConfirmed] = useState(false)
@@ -1390,11 +1392,11 @@ function CwfisHistoricalPilot() {
     const rows = observations.map((row) => [
       'CWFIS Fire M3 hotspots', 'https://cwfis.cfs.nrcan.gc.ca/geoserver/ows', startDate, endDate,
       matchedCount ?? observations.length, observations.length, truncated ? 'true' : 'false', 'unknown',
-      row.acquiredAtUtc, row.latitude, row.longitude, row.source, row.sensor, row.satellite, row.agency, row.id,
+      cwfisAttribution, row.acquiredAtUtc, row.latitude, row.longitude, row.source, row.sensor, row.satellite, row.agency, row.id,
     ])
     downloadCsv(`orbit-ember-watch-cwfis-${startDate}-${endDate}.csv`, [
       'dataset', 'source_url', 'query_start_utc', 'query_end_utc', 'matched_feature_count', 'returned_feature_count',
-      'truncated', 'coverage_state', 'acquired_at_utc', 'latitude', 'longitude', 'source', 'sensor', 'satellite', 'agency', 'source_record_id',
+      'truncated', 'coverage_state', 'source_attribution', 'acquired_at_utc', 'latitude', 'longitude', 'source', 'sensor', 'satellite', 'agency', 'source_record_id',
     ], rows)
   }
   const load = async () => {
@@ -1439,7 +1441,7 @@ function CwfisHistoricalPilot() {
       <div className="cwfis-day-labels" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(2px, 1fr))` }}>{days.map((day) => <span key={day}>{day.slice(8)}</span>)}</div>
       <div className="cwfis-source-list"><b>Source provenance</b>{Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]).map(([source, count]) => <span key={source}>{source} <strong>{count.toLocaleString()}</strong></span>)}</div>
       <div className="cwfis-source-list"><b>Satellites / agencies</b>{Object.entries(satelliteCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([satellite, count]) => <span key={satellite}>{satellite} <strong>{count.toLocaleString()}</strong></span>)}{Object.keys(agencyCounts).sort().map((agency) => <span key={agency}>Agency {agency}</span>)}</div>
-      <small className="cwfis-source-citation">Canadian Forest Service. 2020. <a href="https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/archive/fireM3_hotspots_metadata_NAP_ISO_19115_2003.pdf" target="_blank" rel="noreferrer">Canadian Wildland Fire Information System (CWFIS)</a>, Natural Resources Canada, Canadian Forest Service, Northern Forestry Centre, Edmonton, Alberta.</small>
+      <small className="cwfis-source-citation">{cwfisAttribution} <a href="https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/archive/fireM3_hotspots_metadata_NAP_ISO_19115_2003.pdf" target="_blank" rel="noreferrer">Dataset metadata and attribution</a>.</small>
     </>}
     {state === 'idle' && <small className="cwfis-idle">Choose a date window up to 31 days. This Alberta sample explores historical source-labelled hotspot records.</small>}
   </section>
