@@ -1222,38 +1222,39 @@
 
 /* Dashboard activity card: keep the map visible through the glass and give the data a calmer focal point. */
 .dashboard-map-summary {
-  border-color: rgba(193, 234, 238, .44);
-  border-radius: 16px;
+  border-color: rgba(193, 234, 238, .5);
+  border-radius: 18px;
   background:
-    radial-gradient(ellipse at 0 0, rgba(255, 177, 73, .11), transparent 43%),
-    radial-gradient(ellipse at 100% 0, rgba(56, 210, 215, .12), transparent 49%),
-    linear-gradient(140deg, rgba(13, 31, 43, .94), rgba(5, 16, 25, .91));
-  box-shadow: 0 22px 54px rgba(0, 0, 0, .35), 0 0 28px rgba(37, 210, 216, .09), inset 0 1px 0 rgba(245, 255, 255, .24);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  backdrop-filter: blur(20px) saturate(150%);
+    radial-gradient(ellipse at 0 0, rgba(255, 177, 73, .15), transparent 43%),
+    radial-gradient(ellipse at 100% 0, rgba(56, 210, 215, .16), transparent 49%),
+    linear-gradient(140deg, rgba(17, 39, 52, .82), rgba(5, 17, 26, .76));
+  box-shadow: 0 22px 54px rgba(0, 0, 0, .34), 0 0 30px rgba(37, 210, 216, .12), inset 0 1px 0 rgba(245, 255, 255, .3), inset 0 -1px 0 rgba(99, 211, 221, .08);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  backdrop-filter: blur(24px) saturate(165%);
   transition: border-color .2s ease, box-shadow .2s ease;
 }
 .dashboard-map-summary:hover {
-  border-color: rgba(193, 234, 238, .54);
-  box-shadow: 0 24px 58px rgba(0, 0, 0, .37), 0 0 32px rgba(37, 210, 216, .12), inset 0 1px 0 rgba(245, 255, 255, .27);
+  border-color: rgba(193, 234, 238, .64);
+  box-shadow: 0 24px 58px rgba(0, 0, 0, .37), 0 0 34px rgba(37, 210, 216, .16), inset 0 1px 0 rgba(245, 255, 255, .34), inset 0 -1px 0 rgba(99, 211, 221, .1);
 }
 .dashboard-summary-emblem {
   border-color: rgba(255, 187, 112, .38);
   background: linear-gradient(145deg, rgba(255, 173, 91, .2), rgba(242, 104, 59, .09));
   box-shadow: 0 6px 20px rgba(242, 104, 59, .13), inset 0 1px 0 rgba(255, 255, 255, .2);
 }
-.dashboard-summary-context { min-height: 34px; padding: 0 9px; border: 1px solid rgba(148, 194, 203, .16); border-radius: 8px; background: rgba(5, 17, 26, .48); }
+.dashboard-summary-context { min-height: 36px; padding: 0 10px; border: 1px solid rgba(173, 222, 228, .2); border-radius: 10px; background: linear-gradient(120deg, rgba(8, 25, 36, .58), rgba(10, 33, 43, .4)); box-shadow: inset 0 1px 0 rgba(244, 255, 255, .07); }
 .dashboard-detection-count {
   background:
-    linear-gradient(112deg, rgba(244, 177, 47, .12), transparent 68%),
-    linear-gradient(145deg, rgba(21, 48, 61, .86), rgba(6, 20, 30, .78));
+    linear-gradient(112deg, rgba(244, 177, 47, .16), transparent 68%),
+    linear-gradient(145deg, rgba(27, 57, 69, .72), rgba(6, 20, 30, .62));
+  box-shadow: inset 0 1px 0 rgba(246, 255, 255, .13), 0 8px 22px rgba(0, 0, 0, .12);
 }
-.dashboard-product-line { border: 1px solid rgba(148, 194, 203, .12); background: rgba(4, 16, 24, .46); }
-.dashboard-load-button { min-height: 42px; border-color: rgba(62, 224, 220, .55); background: linear-gradient(105deg, rgba(37, 210, 216, .22), rgba(37, 210, 216, .1)); color: #c2fffb; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 8px 22px rgba(0, 0, 0, .2); }
+.dashboard-product-line { min-height: 34px; border: 1px solid rgba(148, 194, 203, .18); background: rgba(4, 16, 24, .34); box-shadow: inset 0 1px 0 rgba(244, 255, 255, .06); }
+.dashboard-load-button { min-height: 44px; border-color: rgba(88, 231, 228, .62); border-radius: 11px; background: linear-gradient(105deg, rgba(37, 210, 216, .27), rgba(37, 210, 216, .12)); color: #d0fffc; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 8px 22px rgba(0, 0, 0, .2); }
 .dashboard-load-button:hover:not(:disabled) { background: linear-gradient(105deg, rgba(37, 210, 216, .3), rgba(37, 210, 216, .16)); }
 .dashboard-load-button:active:not(:disabled) { transform: translateY(1px); }
 @media (max-width: 760px) {
-  .dashboard-map-summary { width: min(196px, calc(100% - 16px)); border-radius: 13px; -webkit-backdrop-filter: blur(20px) saturate(150%); backdrop-filter: blur(20px) saturate(150%); }
+  .dashboard-map-summary { width: min(216px, calc(100% - 16px)); border-radius: 15px; -webkit-backdrop-filter: blur(22px) saturate(155%); backdrop-filter: blur(22px) saturate(155%); }
   .dashboard-summary-title h2 { font-size: 9px; }
   .dashboard-status-pill { gap: 3px; padding-inline: 4px; font-size: 6px; }
 }

@@ -83,6 +83,27 @@ function firmsAccessLabel(accessMode: string | null) {
   return 'access method unavailable'
 }
 
+type CsvValue = string | number | null
+
+function downloadCsv(filename: string, headers: string[], rows: CsvValue[][]) {
+  if (rows.length === 0) return
+  const escapeCell = (value: CsvValue) => {
+    const cell = value === null ? '' : String(value)
+    const safeCell = typeof value === 'string' && /^[=+@\-\t\r]/.test(cell) ? `'${cell}` : cell
+    return `"${safeCell.replaceAll('"', '""')}"`
+  }
+  const csv = [headers, ...rows].map((row) => row.map(escapeCell).join(',')).join('\r\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 function useFirmsCoverage(enabled: boolean) {
   const [coverage, setCoverage] = useState<FirmsCoverageState>({ status: 'idle', products: [], fetchedAtUtc: null, message: '' })
   const controllerRef = useRef<AbortController | null>(null)
@@ -1091,7 +1112,7 @@ function SourcePipeline({ observations, feed, archiveCatalog }: { observations: 
   </section>
 }
 
-function SourceFocusCard({ selected, location, feed, windField, windTime, terrainAnalysis, elevation, archiveCatalog, onOpenCompare }: { selected: DataSourceId; location: MapPoint; feed: ReturnType<typeof useFirms>; windField: WindFieldState; windTime?: string; terrainAnalysis: TerrainAnalysis; elevation: { value: number; state: 'loading' | 'ready' | 'error' }; archiveCatalog: FirmsArchiveState; onOpenCompare: () => void }) {
+function SourceFocusCard({ selected, location, feed, windField, windTime, terrainAnalysis, elevation, archiveCatalog, onOpenCompare, onOpenTerrain, onOpenLiveMap, onRetryWind, onRefreshArchive }: { selected: DataSourceId; location: MapPoint; feed: ReturnType<typeof useFirms>; windField: WindFieldState; windTime?: string; terrainAnalysis: TerrainAnalysis; elevation: { value: number; state: 'loading' | 'ready' | 'error' }; archiveCatalog: FirmsArchiveState; onOpenCompare: () => void; onOpenTerrain: () => void; onOpenLiveMap: () => void; onRetryWind: () => void; onRefreshArchive: () => void }) {
   const product = firmsSources.find((item) => item.id === feed.source)
   const selectedArchiveRows = archiveCatalog.archives.filter((archive) => archive.product === feed.source)
   const details: Record<DataSourceId, { title: string; subtitle: string; status: string; facts: Array<[string, string]>; note: string }> = {
@@ -1127,42 +1148,64 @@ function SourceFocusCard({ selected, location, feed, windField, windTime, terrai
     },
   }
   const detail = details[selected]
-  const canExportObservations = selected === 'firms' && feed.state === 'ready' && feed.observations.length > 0
-  const exportLabel = selected !== 'firms' ? 'FIRMS export' : feed.state === 'loading' ? 'Loading observations…' : canExportObservations ? `Export CSV · ${feed.observations.length.toLocaleString()}` : feed.state === 'error' ? 'Retry FIRMS request' : feed.state === 'ready' ? 'Reload selected window' : 'Load observations'
-  const exportObservations = () => {
-    if (!canExportObservations) return
-    const fields = ['id', 'source', 'access_mode', 'product', 'query_start_utc', 'query_end_utc', 'retrieved_at_utc', 'acquired_at_utc', 'latitude', 'longitude', 'satellite', 'instrument', 'confidence_native', 'frp_mw', 'brightness_4', 'brightness_5', 'scan_km', 'track_km', 'day_night', 'product_version'] as const
-    const escapeCell = (value: string | number | null) => {
-      const cell = value === null ? '' : String(value)
-      const safeCell = typeof value === 'string' && /^[=+@\-\t\r]/.test(cell) ? `'${cell}` : cell
-      return `"${safeCell.replaceAll('"', '""')}"`
+  const windRows = windTime ? windVectorsAt(windField.nodes, windTime) : []
+  const observationRows = feed.observations.map((observation) => [
+    observation.id, observation.source, firmsAccessLabel(feed.accessMode), feed.source,
+    feed.queryRange?.start ?? null, feed.queryRange?.end ?? null, feed.fetchedAt,
+    observation.acquiredAtUtc, observation.latitude, observation.longitude, observation.satellite,
+    observation.instrument, observation.confidenceNative, observation.frpMw, observation.brightness4,
+    observation.brightness5, observation.scanKm, observation.trackKm, observation.dayNight,
+    observation.productVersion,
+  ])
+  const canExportObservations = (selected === 'firms' || selected === 'archive' && feed.accessMode === 'local-validated-archive') && feed.state === 'ready' && observationRows.length > 0
+  const canExportArchiveManifest = selected === 'archive' && archiveCatalog.status === 'ready' && selectedArchiveRows.length > 0
+  const canExport = canExportObservations
+    || selected === 'wind' && windField.state === 'ready' && windRows.length > 0
+    || selected === 'terrain' && terrainAnalysis.state === 'ready' && terrainAnalysis.profile.length > 0
+    || selected === 'elevation' && elevation.state === 'ready'
+    || canExportArchiveManifest
+  const exportLabel = canExportObservations || selected === 'firms'
+    ? feed.state === 'loading' ? 'Loading observations…' : canExportObservations ? `Export CSV · ${observationRows.length.toLocaleString()}` : feed.state === 'error' ? 'Retry FIRMS request' : feed.state === 'ready' ? 'Reload selected window' : 'Load observations'
+    : selected === 'wind'
+      ? windField.state === 'loading' ? 'Loading wind grid…' : canExport ? `Export wind · ${windRows.length} points` : 'Refresh wind field'
+      : selected === 'terrain'
+        ? terrainAnalysis.state === 'loading' ? 'Sampling terrain…' : canExport ? `Export profile · ${terrainAnalysis.profile.length} samples` : 'Open Terrain to sample'
+        : selected === 'elevation'
+          ? elevation.state === 'loading' ? 'Sampling elevation…' : canExport ? 'Export point sample' : 'Sample unavailable'
+          : archiveCatalog.status === 'loading' ? 'Loading manifests…' : canExportArchiveManifest ? `Export manifests · ${selectedArchiveRows.length}` : archiveCatalog.status === 'idle' ? 'Load manifest catalog' : archiveCatalog.status === 'error' ? 'Retry manifest catalog' : feed.accessMode === 'local-validated-archive' && feed.state === 'loading' ? 'Loading archive rows…' : feed.accessMode === 'local-validated-archive' && feed.state !== 'ready' ? 'Load archive rows' : 'No manifest to export'
+  const primaryAction = () => {
+    if (canExport) {
+      if (canExportObservations) {
+        downloadCsv(`orbit-ember-watch-${feed.source.toLowerCase()}-${feed.queryRange?.end ?? new Date().toISOString().slice(0, 10)}.csv`, ['id', 'source', 'access_mode', 'product', 'query_start_utc', 'query_end_utc', 'retrieved_at_utc', 'acquired_at_utc', 'latitude', 'longitude', 'satellite', 'instrument', 'confidence_native', 'frp_mw', 'brightness_4', 'brightness_5', 'scan_km', 'track_km', 'day_night', 'product_version'], observationRows)
+      } else if (selected === 'wind') {
+        const rows = windRows.map((wind) => [wind.latitude, wind.longitude, windTime ?? null, wind.speedKmh, (wind.directionTo + 180) % 360, wind.directionTo, wind.eastKmh, wind.northKmh, windField.retrievedAt, 'Open-Meteo'])
+        downloadCsv(`orbit-ember-watch-wind-${(windTime ?? 'selected-hour').replaceAll(':', '-')}.csv`, ['latitude', 'longitude', 'valid_at_utc', 'wind_speed_kmh', 'wind_from_degrees', 'wind_to_degrees', 'eastward_component_kmh', 'northward_component_kmh', 'retrieved_at_utc', 'source'], rows)
+      } else if (selected === 'terrain') {
+        const rows = terrainAnalysis.profile.map((point, index) => [index + 1, point.distanceKm, point.latitude, point.longitude, point.elevationM, terrainAnalysis.elevationM, terrainAnalysis.slopeDegrees, terrainAnalysis.aspectDegrees, terrainAnalysis.sampleSpacingM, terrainAnalysis.minElevationM, terrainAnalysis.maxElevationM, 'Mapzen Terrarium · AWS Terrain Tiles'])
+        downloadCsv(`orbit-ember-watch-terrain-profile-${location.lat.toFixed(3)}-${location.lon.toFixed(3)}.csv`, ['sample_index', 'distance_from_a_km', 'latitude', 'longitude', 'profile_elevation_m', 'selected_point_elevation_m', 'local_slope_degrees', 'local_aspect_degrees', 'neighbor_spacing_m', 'profile_min_elevation_m', 'profile_max_elevation_m', 'source'], rows)
+      } else if (selected === 'elevation') {
+        downloadCsv(`orbit-ember-watch-elevation-${location.lat.toFixed(3)}-${location.lon.toFixed(3)}.csv`, ['latitude', 'longitude', 'elevation_m', 'unit', 'source'], [[location.lat, location.lon, elevation.value, 'm', 'Open-Meteo Elevation API']])
+      } else {
+        const rows = selectedArchiveRows.map((archive) => [archive.importId, archive.product, archive.sourceFile, archive.sourceRetrievedAtUtc, archive.minDateUtc, archive.maxDateUtc, archive.rowsRead, archive.rowsAccepted, archive.rowsRejected, archive.rowsDuplicate, archive.sourceSha256, archive.qaStatus, archive.warnings.join(' | ')])
+        downloadCsv('orbit-ember-watch-local-firms-manifests.csv', ['import_id', 'product', 'source_file', 'source_retrieved_at_utc', 'min_date_utc', 'max_date_utc', 'rows_read', 'rows_accepted', 'rows_rejected', 'rows_duplicate', 'source_sha256', 'qa_status', 'warnings'], rows)
+      }
+      return
     }
-    const rows = feed.observations.map((observation) => [
-      observation.id, observation.source, firmsAccessLabel(feed.accessMode), feed.source,
-      feed.queryRange?.start ?? null, feed.queryRange?.end ?? null, feed.fetchedAt,
-      observation.acquiredAtUtc, observation.latitude, observation.longitude, observation.satellite,
-      observation.instrument, observation.confidenceNative, observation.frpMw, observation.brightness4,
-      observation.brightness5, observation.scanKm, observation.trackKm, observation.dayNight,
-      observation.productVersion,
-    ])
-    const csv = [fields, ...rows].map((row) => row.map(escapeCell).join(',')).join('\r\n')
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `orbit-ember-watch-${feed.source.toLowerCase()}-${feed.queryRange?.end ?? new Date().toISOString().slice(0, 10)}.csv`
-    document.body.append(anchor)
-    anchor.click()
-    anchor.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    if (selected === 'archive' && (archiveCatalog.status === 'idle' || archiveCatalog.status === 'error')) onRefreshArchive()
+    else if (selected === 'firms' || selected === 'archive' && feed.accessMode === 'local-validated-archive') void feed.load()
+    else if (selected === 'wind') onRetryWind()
+    else if (selected === 'terrain') onOpenTerrain()
   }
+  const secondaryAction = selected === 'firms' ? onOpenCompare : selected === 'wind' ? onOpenLiveMap : selected === 'archive' ? onRefreshArchive : onOpenTerrain
+  const secondaryLabel = selected === 'firms' ? 'Open in Compare' : selected === 'wind' ? 'Open Live Map' : selected === 'archive' ? 'Refresh catalog' : 'Open Terrain'
+  const secondaryDisabled = selected === 'wind' && windField.state === 'loading' || selected === 'archive' && archiveCatalog.status === 'loading'
   return <section className="source-focus-card" aria-label={`${detail.title} dataset details`}>
     <header><div><span>SELECTED DATASET</span><h3>{detail.title}</h3><small>{detail.subtitle}</small></div><b className={`source-focus-status ${selected}`}>{detail.status}</b></header>
     <dl>{detail.facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     <p>{detail.note}</p>
     <div className="source-focus-actions">
-      <button type="button" className="source-focus-action primary" onClick={() => canExportObservations ? exportObservations() : void feed.load()} disabled={selected !== 'firms' || feed.state === 'loading'} title={canExportObservations ? 'Download returned observations with product and retrieval provenance as CSV' : selected === 'firms' ? 'Request the selected FIRMS product and date window' : 'CSV export is currently available for loaded FIRMS observations'}>{canExportObservations ? <Download size={13} /> : <RefreshCw size={13} />}{exportLabel}</button>
-      <button type="button" className="source-focus-action" onClick={onOpenCompare} disabled={selected !== 'firms'} title={selected === 'firms' ? 'Compare this FIRMS product with another sensor product' : 'Select NASA FIRMS to open a sensor comparison'}><Activity size={13} />Open in Compare</button>
+      <button type="button" className="source-focus-action primary" onClick={primaryAction} disabled={selected === 'elevation' && elevation.state !== 'ready' || selected === 'archive' && archiveCatalog.status === 'loading' || selected === 'archive' && !canExport && archiveCatalog.status === 'ready' && selectedArchiveRows.length === 0 && feed.accessMode !== 'local-validated-archive' || selected === 'wind' && windField.state === 'loading' || selected === 'terrain' && terrainAnalysis.state === 'loading' || (selected === 'firms' || selected === 'archive' && feed.accessMode === 'local-validated-archive') && feed.state === 'loading'} title={canExport ? 'Download the actual sample with source and unit metadata as CSV' : exportLabel}>{canExport ? <Download size={13} /> : selected === 'terrain' && !canExport ? <Mountain size={13} /> : <RefreshCw size={13} />}{exportLabel}</button>
+      <button type="button" className="source-focus-action" onClick={secondaryAction} disabled={secondaryDisabled}>{selected === 'firms' ? <Activity size={13} /> : selected === 'wind' ? <Wind size={13} /> : selected === 'archive' ? <Database size={13} /> : <Mountain size={13} />}{secondaryLabel}</button>
     </div>
   </section>
 }
@@ -1419,7 +1462,7 @@ export function App() {
   const compareB = useFirms(location.lat, location.lon, compareSourceB, firmsDays, queryEndDate)
   const defaultTerrainTransect = useMemo(() => terrainTransectCoordinates(location.lat, location.lon), [location.lat, location.lon])
   const terrainTransect = customTerrainTransect ?? defaultTerrainTransect
-  const terrainAnalysis = useTerrainAnalysis(location.lat, location.lon, active === 'Terrain' || active === 'Scenario', terrainRefresh, terrainTransect)
+  const terrainAnalysis = useTerrainAnalysis(location.lat, location.lon, active === 'Terrain' || active === 'Scenario' || active === 'Data & Sources' && selectedDataSource === 'terrain', terrainRefresh, terrainTransect)
   const selectTerrainTransectPoint = useCallback((point: [number, number]) => {
     if (!terrainTransectPointTarget) return
     setTerrainTransectMessage('')
@@ -1589,6 +1632,10 @@ export function App() {
     }
     setActive('Compare')
   }
+  const openSourceArchiveCatalog = () => {
+    setArchiveCatalogExpanded(true)
+    if (firmsArchiveCatalog.status !== 'loading') void firmsArchiveCatalog.load()
+  }
   const liveMapDock = <section className={`live-map-dock ${liveDockCollapsed ? 'collapsed' : ''}`} aria-label="Live Map layers and filters">
     <button type="button" className="live-dock-heading" aria-expanded={!liveDockCollapsed} onClick={() => setLiveDockCollapsed((collapsed) => !collapsed)}><span><Layers3 size={15} /></span><div><b>Map layers</b><small>{location.name} · {liveObservations.length.toLocaleString()} rows returned</small></div><span className={`live-dock-state ${liveFeedState}`} /><ChevronDown className="live-dock-chevron" size={14} /></button>
     <section className="live-dock-section"><div className="module-label">SATELLITE SOURCES</div><div className="live-source-list">{liveSensorOptions.map((sensor) => {
@@ -1688,7 +1735,7 @@ export function App() {
     <div className="terrain-attribution"><b>Source & attribution</b><span>Mapzen Terrain Tiles · Terrarium RGB · Canadian terrain data © Open Government Licence — Canada</span><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
   </> : active === 'Data & Sources' ? <>
     <div className="panel-heading"><div><h2>Data & provenance</h2><p>Sources currently used in this view</p></div><Database size={18} /></div>
-    <SourceFocusCard selected={selectedDataSource} location={location} feed={firms} windField={windField} windTime={weather?.time} terrainAnalysis={terrainAnalysis} elevation={elevation} archiveCatalog={firmsArchiveCatalog} onOpenCompare={openSelectedSourceInCompare} />
+    <SourceFocusCard selected={selectedDataSource} location={location} feed={firms} windField={windField} windTime={weather?.time} terrainAnalysis={terrainAnalysis} elevation={elevation} archiveCatalog={firmsArchiveCatalog} onOpenCompare={openSelectedSourceInCompare} onOpenTerrain={() => setActive('Terrain')} onOpenLiveMap={() => setActive('Live Map')} onRetryWind={() => windField.retry()} onRefreshArchive={openSourceArchiveCatalog} />
     <div className="source-card"><div><Wind size={16} /><b>Open-Meteo wind grid</b><span className={windField.state === 'ready' ? 'source-live' : 'source-missing'}>{windField.state === 'ready' ? 'CONNECTED' : windField.state === 'loading' && windField.nodes.length ? 'UPDATING VIEW' : windField.state.toUpperCase()}</span></div><p>{windField.state === 'ready' ? `${windField.nodes.length} forecast points interpolate hourly wind speed and direction across the visible map extent.` : windField.nodes.length ? 'The previous map grid stays visible while this camera extent refreshes.' : 'A 5 × 5 forecast grid drives the map wind field.'}</p><small>25 points · viewport-relative grid · UTC · selected timeline hour · vector interpolation · {windField.retrievedAt ? `retrieved ${new Date(windField.retrievedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'not yet retrieved'}</small><a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">API documentation <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Mapzen Terrain Tiles · Terrarium</b><span className={terrainAnalysis.state === 'ready' ? 'source-live' : 'source-missing'}>{terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state.toUpperCase()}</span></div><p>Bare-earth elevation tiles drive the 3D relief and the selected-point slope/aspect and transect samples.</p><small>Terrarium RGB · Canadian source attribution: Open Government Licence — Canada. Land cover and fuel classes remain unconnected.</small><a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Dataset details <ChevronRight size={12} /></a></div>
     <div className="source-card"><div><Mountain size={16} /><b>Open-Meteo Elevation</b><span className={elevation.state === 'ready' ? 'source-live' : 'source-missing'}>{elevation.state === 'ready' ? 'CONNECTED' : elevation.state.toUpperCase()}</span></div><p>{elevation.state === 'ready' ? `Point elevation: ${Math.round(elevation.value)} m.` : 'Point elevation lookup for selected coordinates.'}</p><small>One coordinate sample · metres above sea level</small></div>

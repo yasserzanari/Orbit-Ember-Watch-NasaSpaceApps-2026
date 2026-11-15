@@ -7,7 +7,7 @@ const transectLengthMeters = 80_000
 const transectSamples = 25
 const neighborSpacingPixels = 2
 
-export type TerrainProfilePoint = { distanceKm: number; elevationM: number }
+export type TerrainProfilePoint = { distanceKm: number; latitude: number; longitude: number; elevationM: number }
 export type TerrainEndpoints = [[number, number], [number, number]]
 export type TerrainAnalysis = {
   state: 'idle' | 'loading' | 'ready' | 'error'
@@ -90,7 +90,7 @@ function offsetPoint(latitude: number, longitude: number, eastMeters: number, no
   }
 }
 
-function classifyTerrain(latitude: number, grid: number[], profileValues: number[], profileLengthMeters: number): TerrainAnalysis {
+function classifyTerrain(latitude: number, grid: number[], profileValues: number[], profileLengthMeters: number, profileCoordinates: Array<{ latitude: number; longitude: number }>): TerrainAnalysis {
   const pixelSizeM = earthRadiusMeters * Math.cos(latitude * Math.PI / 180) * 2 * Math.PI / (tileSize * (2 ** zoom))
   const spacingM = pixelSizeM * neighborSpacingPixels
   const [nw,n,ne,w,center,e,sw,s,se] = grid
@@ -100,6 +100,8 @@ function classifyTerrain(latitude: number, grid: number[], profileValues: number
   const aspectDegrees = slopeDegrees < 2 ? null : (Math.atan2(-dzEast, dzSouth) * 180 / Math.PI + 360) % 360
   const profile = profileValues.map((elevationM, index) => ({
     distanceKm: index * (profileLengthMeters / (transectSamples - 1)) / 1_000,
+    latitude: profileCoordinates[index].latitude,
+    longitude: profileCoordinates[index].longitude,
     elevationM,
   }))
   return {
@@ -146,7 +148,7 @@ async function loadAnalysis(latitude: number, longitude: number, endpoints: Terr
   const [neighborhoodElevations, profileElevations] = await Promise.all([
     sampleElevations(neighborhood), sampleElevations(profile.points),
   ])
-  return classifyTerrain(latitude, neighborhoodElevations, profileElevations, profile.lengthMeters)
+  return classifyTerrain(latitude, neighborhoodElevations, profileElevations, profile.lengthMeters, profile.points)
 }
 
 export function terrainTransectCoordinates(latitude: number, longitude: number): TerrainEndpoints {
