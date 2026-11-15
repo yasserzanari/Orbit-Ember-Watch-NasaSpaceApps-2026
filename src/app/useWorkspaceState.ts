@@ -128,7 +128,8 @@ function readWorkspaceState(): WorkspaceState {
     compareProductB: compareBParam && firmsProducts.includes(compareBParam) && compareBParam.startsWith('VIIRS') ? compareBParam : 'VIIRS_NOAA20_NRT',
     firmsDays: firmsDayRanges.includes(daysParam) ? daysParam : 1,
     windVisible: params.get('wind') !== '0',
-    terrainEnabled: params.get('terrain') !== '0',
+    // Start with the stable 2D basemap; shared links can explicitly request 3D with terrain=1.
+    terrainEnabled: params.get('terrain') === '1',
   }
 }
 

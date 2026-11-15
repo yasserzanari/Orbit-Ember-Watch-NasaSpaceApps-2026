@@ -5,6 +5,7 @@ import type { GeoJSONSource, ImageSource, Map as MapLibreMap } from 'maplibre-gl
 import { useWorkspaceState, workspaceLocations } from '../app/useWorkspaceState'
 import type { FirmsProduct, WorkspaceView } from '../app/useWorkspaceState'
 import { FieldReports } from './FieldReports'
+import { CommonGridPreview } from './CommonGridPreview'
 import { terrainAspectLabel, terrainTransectCoordinates, useTerrainAnalysis } from '../app/useTerrainAnalysis'
 import type { TerrainAnalysis, TerrainEndpoints } from '../app/useTerrainAnalysis'
 import {
@@ -760,9 +761,9 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
       },
       center: [lon, lat],
       zoom: 6.2,
-      pitch: 40,
+      pitch: terrainEnabled ? 40 : 0,
       bearing: -12,
-      maxPitch: 78,
+      maxPitch: 60,
       attributionControl: false,
     })
     map.current.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
@@ -776,7 +777,7 @@ function MapCanvas({ lat, lon, windDirection, observations, windNodes, windTime,
     map.current.on('resize', emitCameraBounds)
     map.current.once('style.load', emitCameraBounds)
     map.current.on('style.load', () => {
-      map.current?.setTerrain({ source: 'albertaDem', exaggeration: 1.2 })
+      map.current?.setTerrain(terrainEnabled ? { source: 'albertaDem', exaggeration: 1.2 } : null)
       map.current?.addLayer({
         id: 'alberta-hillshade', type: 'hillshade', source: 'albertaDem',
         paint: { 'hillshade-exaggeration': 0.32, 'hillshade-shadow-color': '#091a25', 'hillshade-highlight-color': '#a3c9be' },
@@ -1788,12 +1789,21 @@ export function App() {
       workspace.style.removeProperty('--field-mobile-sheet-top')
     }
   }, [isFieldMobile])
+  const compareSameWindow = Boolean(compareA.queryRange && compareB.queryRange
+    && compareA.queryRange.start === compareB.queryRange.start
+    && compareA.queryRange.end === compareB.queryRange.end)
+  const commonGridState = compareA.state === 'error' || compareB.state === 'error'
+    ? 'error'
+    : compareA.state === 'ready' && compareB.state === 'ready'
+      ? compareSameWindow ? 'ready' : 'mismatch'
+      : 'loading'
   const moduleBody = active === 'Dashboard' ? dashboardPanel : active === 'Calendar' ? <CalendarWeekDetails selectedDate={calendarSelectedDate} observations={firms.observations} observationState={firms.state} days={firms.days} source={firms.source} windowStart={calendarWindowStart} windowEnd={calendarWindowEnd} coverageUnknown={archiveCoverageUnknown} unknownBeforeDate={unknownBeforeDate} unknownAfterDate={unknownAfterDate} /> : active === 'Live Map' ? null : active === 'Compare' ? <>
     <div className="panel-heading"><div><h2>Detection trends</h2><p>Daily returned records · UTC</p></div><Activity size={18} /></div>
     <p className="compare-intro">Each line shows observations returned by its own product for the selected area and dates.</p>
     <div className="compare-trend-stack"><CompareTrend feed={compareA} tone="modis" /><CompareTrend feed={compareB} tone="viirs" /></div>
     <div className="compare-metric-grid"><div><span>MODIS returned</span><b>{compareA.state === 'ready' ? compareA.observations.length.toLocaleString() : '—'}</b></div><div><span>VIIRS returned</span><b>{compareB.state === 'ready' ? compareB.observations.length.toLocaleString() : '—'}</b></div><div><span>Dates with records in both</span><b>{compareA.state === 'ready' && compareB.state === 'ready' ? (() => { const a = new Set(compareA.observations.map((item) => item.acquiredAtUtc?.slice(0, 10)).filter(Boolean)); return new Set(compareB.observations.map((item) => item.acquiredAtUtc?.slice(0, 10)).filter((day) => day && a.has(day))).size })() : '—'}</b></div></div>
     <div className="compare-validation"><AlertTriangle size={15} /><div><b>Agreement not evaluated</b><p>Shared dates mean both products returned records on those UTC days. This does not measure shared overpass, spatial coverage, or detection agreement. No calibration score is available.</p></div></div>
+    <CommonGridPreview modis={compareA.observations} viirs={compareB.observations} modisProduct={compareA.source} viirsProduct={compareB.source} modisAccess={compareA.accessMode} viirsAccess={compareB.accessMode} queryRange={compareA.queryRange} center={{ latitude: location.lat, longitude: location.lon }} state={commonGridState} />
     {activeDetection && <div className="detection-detail"><div className="module-label">SELECTED SATELLITE OBSERVATION</div><b>{activeDetection.source.replaceAll('_', ' ')}</b><span>{activeDetection.latitude.toFixed(4)}°, {activeDetection.longitude.toFixed(4)}°</span><span>{activeDetection.acquiredAtUtc ? new Date(activeDetection.acquiredAtUtc).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : 'Acquisition time unavailable'}</span>{activeDetection.restoredFromLink && <small>Restored from a share link · this record was not revalidated with NASA FIRMS.</small>}<div className="detail-grid"><span>Native confidence</span><b>{activeDetection.confidenceNative ?? 'not provided'}</b><span>FRP</span><b>{activeDetection.frpMw === null ? 'not provided' : `${activeDetection.frpMw} MW`}</b><span>Satellite</span><b>{activeDetection.satellite ?? 'not provided'}</b><span>Product version</span><b>{activeDetection.productVersion ?? 'not provided'}</b></div><small>Thermal anomaly observation · not a confirmed incident</small></div>}
   </> : active === 'Terrain' ? <>
     <div className="panel-heading"><div><h2>Selected terrain cell</h2><p>{Math.abs(location.lat).toFixed(4)}° {location.lat >= 0 ? 'N' : 'S'} · {Math.abs(location.lon).toFixed(4)}° {location.lon >= 0 ? 'E' : 'W'}</p></div><span className={`terrain-state-tag ${terrainAnalysis.state}`}>{terrainAnalysis.state === 'ready' ? 'SAMPLED' : terrainAnalysis.state === 'loading' ? 'READING DEM' : terrainAnalysis.state === 'error' ? 'UNAVAILABLE' : 'IDLE'}</span></div>

@@ -17,7 +17,7 @@ curl 'http://localhost:4174/api/firms?source=VIIRS_NOAA20_NRT&bbox=-115.5938,52.
 ## Déroulé de 90 secondes
 
 1. **Situer le signal.** Sur Dashboard, charger les observations pour Edmonton; expliquer que chaque point est une anomalie thermique détectée par satellite, pas une confirmation d’incident.
-2. **Comparer les instruments.** Ouvrir Compare sur la même zone et la même fenêtre, garder MODIS et VIIRS dans deux séries distinctes, puis ouvrir quelques attributs natifs et heures UTC.
+2. **Comparer les instruments.** Ouvrir Compare sur la même zone et la même fenêtre, garder MODIS et VIIRS dans deux séries distinctes, puis montrer l’aperçu exploratoire sur mailles communes de 1 km et les attributs natifs/heures UTC. Présenter le chevauchement comme descriptif des détections retournées uniquement : il ne mesure ni la couverture ni l’accord entre capteurs.
 3. **Relier au contexte.** Dans Live Map, activer les couches de vent et de relief; préciser que le vent vient d’Open‑Meteo et ne prédit pas la propagation du feu.
 4. **Montrer la traçabilité.** Dans Data & Sources, distinguer les flux NRT de sept jours des archives historiques. Une disponibilité globale ne prouve pas la couverture d’un pixel.
 

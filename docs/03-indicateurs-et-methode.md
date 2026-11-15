@@ -32,6 +32,10 @@ Tester des mailles de 1, 2 et 5 km dans une projection appropriée à surfaces �
 
 Affecter d’abord le centre de chaque détection à une cellule. Cela simplifie le prototype, mais ignore l’empreinte du pixel. Tester les effets de bordure ; vérifier la définition des champs de dimensions de pixel avant de les utiliser. Une cellule avec une détection n’est pas une cellule entièrement brûlée.
 
+**Aperçu exploratoire implémenté dans Compare :** les produits MODIS et VIIRS chargés sur la même fenêtre sont projetés sur une grille locale Lambert azimutale équivalente sphérique (rayon moyen `6 371 008,8 m`) centrée sur le lieu choisi, puis agrégés par cellule candidate de 1 km et jour UTC. Les métriques et l’union spatiale sont limitées aux dates UTC où chaque produit a renvoyé au moins une ligne; les autres dates ne sont pas assimilées à des zéros. La vue sépare les détections retenues des cellules-jours occupées et calcule le chevauchement descriptif `|MODIS ∩ VIIRS| / |MODIS ∪ VIIRS|` parmi les cellules-jours observés à ces dates. Le CSV conserve la version de méthode, la taille de maille, le rayon et le centre de projection, la fenêtre demandée, le nombre de dates partagées, les produits, le mode d’accès, les comptes par capteur et les plateformes visibles.
+
+Cette mesure ne donne ni le nombre d’occasions d’observation, ni la couverture, ni une probabilité d’accord, ni l’identité d’un feu. Un jour-cellule sans ligne reste inconnu. La maille commune aligne un support spatial candidat; elle ne corrige ni la résolution physique ni la sensibilité des capteurs. Ne pas présenter ce chevauchement comme une calibration ou un résultat de validation.
+
 Conserver les dates UTC et agréger par semaine à bornes fixes. Documenter les années ISO à 53 semaines et le 29 février. Examiner jour et nuit séparément avant tout regroupement.
 
 ## 4. Activité et exposition
