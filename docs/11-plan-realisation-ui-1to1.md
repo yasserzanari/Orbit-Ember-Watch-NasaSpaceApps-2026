@@ -240,3 +240,9 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Les tailles étroites conservent un flou réduit pour limiter le coût de composition. Le léger changement de bordure au survol s’éteint avec `prefers-reduced-motion`; les états de données et leurs avertissements ne changent pas.
 - Revue navigateur au format 1238 × 1113, 390 × 844 et 360 × 800. Les captures dédiées ont passé la vérification CRC et le décodage complet PNG; Chrome headless a été limité à 6 cœurs sur 12 puis fermé à la fin de chaque capture. Sur téléphone, le panneau est resserré à 196 px pour dégager les commandes 3D et Vent; les statuts et le titre restent visibles, le contenu de provenance peut se tronquer sur une seule ligne.
 - Vérification : `npm run build` réussi et `git diff --check` propre. La météo n’était pas disponible pendant les captures; le panneau l’a signalé et aucun chiffre météo n’a été inventé.
+
+## Avancement — contraste du verre sur le résumé Dashboard
+
+- La capture de revue au format du commentaire (1238 × 1113) montrait le relief cartographique trop présent à travers « Area activity », ce qui diminuait le contraste du texte.
+- La surface garde un verre dépoli, ses reflets cyan/ambre et la carte visible autour, avec un fond plus sombre, un flou mieux dosé, un contexte de lieu cadré et un bouton d’action plus contrasté et plus facile à repérer.
+- Vérification : captures 1585 × 992 et 1238 × 1113 décodées intégralement et CRC vérifiés; le rendu a été relu à la taille exacte du commentaire. `npm run build` et `git diff --check` réussis. Le flux public n’avait pas encore chargé les observations; l’interface a conservé son état inconnu au lieu d’afficher zéro.
