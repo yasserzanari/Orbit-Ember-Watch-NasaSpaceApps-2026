@@ -8,6 +8,7 @@
     "dev:api": "node server/index.mjs",
     "dev:web": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
+    "smoke:local": "node scripts/smoke-local.mjs",
     "data:firms:ingest": "node scripts/ingest-firms-archive.mjs",
     "data:firms:aggregate": "node scripts/aggregate-firms-archive.mjs",
     "preview": "vite preview --host 0.0.0.0",
