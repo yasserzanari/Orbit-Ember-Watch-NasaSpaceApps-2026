@@ -201,7 +201,7 @@ function useFirms(lat: number, lon: number, source: string, days: number, select
     requestController.current?.abort()
     const controller = new AbortController()
     requestController.current = controller
-    setState('loading'); setMessage(''); setSourceDateRange(null); setDetectionDateRange(null); setAccessMode(null); setArchiveImports([])
+    setState('loading'); setMessage(''); setObservations([]); setFetchedAt(null); setSourceDateRange(null); setDetectionDateRange(null); setAccessMode(null); setArchiveImports([])
     try {
       const response = await fetch(`/api/firms?${params}`, { signal: controller.signal })
       const payload = await response.json()

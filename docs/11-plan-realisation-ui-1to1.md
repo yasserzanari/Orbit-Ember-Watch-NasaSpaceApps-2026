@@ -277,3 +277,8 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - L’API renvoie deux informations distinctes : la fenêtre où le flux NRT public est disponible et les dates réellement présentes dans le CSV national téléchargé. Le client conserve les deux; le pipeline Data & Sources les montre séparément et précise que les dates nationales ne décrivent pas la couverture de la zone sélectionnée.
 - Le message Dashboard pour une fenêtre qui dépasse la disponibilité indique maintenant la borne de disponibilité et garde les dates hors fenêtre inconnues; il ne prétend plus que des lignes existent jusqu’à cette date.
 - Vérification : pour Edmonton, l’API NRT Canada a répondu HTTP 200 avec fenêtre disponible du 2026-11-08 au 2026-11-15 et lignes de CSV datées du 2026-11-07 au 2026-11-14; le navigateur limité à 6 cœurs a rendu ces deux plages distinctement. `npm run build` et `git diff --check` passent.
+
+## Avancement — prévenir les points périmés pendant le chargement
+
+- Chaque nouvelle requête FIRMS efface immédiatement les observations et l’heure de récupération précédentes, en plus de ses anciennes métadonnées d’accès. Les points, courbes et comptes ne restent donc pas affichés sous la nouvelle fenêtre demandée pendant l’attente ou après une erreur.
+- Le chargement de Dashboard, Compare et des capteurs de Live Map partage ce hook; le changement s’applique uniformément à ces requêtes.
