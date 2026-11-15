@@ -61,7 +61,7 @@ Wireframe téléphone :
 1. Le backend récupère les composantes et paramètres horaires nécessaires sur une grille qui couvre la vue cartographique réelle. Il conserve heure valide, heure de récupération, source, variables et géométrie.
 2. La couche MapLibre projette la grille sur l’emprise et la caméra actuelles. La vitesse et la direction sont interpolées spatialement entre nœuds disponibles; le changement d’heure remplace la trame de manière explicite.
 3. Les rubans de particules suivent le vecteur local interpolé. La couleur code la vitesse selon une seule légende; l’espacement/longueur ne doit pas suggérer une durée ou une propagation du feu. Une animation statique directionnelle remplace les particules si `prefers-reduced-motion` est actif.
-4. Zoom, rotation, inclinaison, redimensionnement, déplacement et franchissement de l’antiméridien recalculent la couverture. Pendant un rafraîchissement, l’ancien champ reste identifié comme dernier champ reçu; après erreur, aucune nouvelle valeur n’est inventée.
+4. Zoom, rotation, inclinaison, redimensionnement, déplacement et franchissement de l’antiméridien recalculent la couverture. Le forecast horaire et la grille viewport doivent appartenir au même lieu et à la même heure; pendant un changement de lieu, les anciennes valeurs météo sont retirées jusqu’à la réponse correspondante. Pendant le rafraîchissement d’emprise, l’ancien champ reste identifié comme dernier champ reçu; après erreur, aucune nouvelle valeur n’est inventée.
 5. Le budget d’animation est proportionnel à la surface de canvas et à la capacité mobile. Pause quand la vue est inactive; le mode 3D garde le relief sous le champ sans bloquer la sélection des feux.
 6. Validation: comparer plusieurs points du rendu aux valeurs source; vérifier 2D/3D, directions cardinales, vent nul, rafales, zoom extrême, ±180°, heure passée/suivante, réseau interrompu, mobile et animations réduites.
 
@@ -194,6 +194,12 @@ Chaque tranche touche une vue ou un comportement partagé du vent, comprend: (1)
 - Un dock vitré au-dessus de la carte propose FIRMS, vent Open-Meteo, DEM Terrarium, élévation Open-Meteo et archives locales; la sélection met à jour une fiche de détails avec période, statut, résolution/échantillonnage, validité UTC ou provenance selon la source.
 - Les calques hotspots, vent et relief agissent sur la carte. Sensor footprints et orbit swaths restent explicitement indisponibles tant qu’aucune source de couverture n’est connectée. Le dock peut se replier, et démarre replié sur téléphone pour préserver la carte.
 - Vérification : `npm run build` réussi et `git diff --check` propre. La capture de référence et l’alignement pixel par pixel restent à faire.
+
+## Avancement — mise à jour atomique du forecast météo
+
+- Au changement de coordonnées, les heures et l’heure de récupération du forecast précédent sont maintenant effacées pendant la requête Open-Meteo. L’interface ne peut donc plus montrer la météo de l’ancien lieu à côté de la nouvelle emprise du vent.
+- La réponse horaire est acceptée uniquement si chaque variable demandée partage la même longueur temporelle; les échantillons incomplets ou dont les valeurs ne sont pas finies sont retirés avant affichage.
+- Vérification : build TypeScript/Vite et `git diff --check` à effectuer; le pan vers un autre lieu et le retour après erreur réseau restent à valider au navigateur.
 
 ## Avancement — échelle vent cohérente avec le raster
 

@@ -280,6 +280,8 @@ function useWeather(lat: number, lon: number) {
       wind_speed_unit: 'kmh', timezone: 'UTC', forecast_days: '7', past_days: '1',
     })
     setState('loading')
+    setHours([])
+    setRetrievedAt(null)
     fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`Weather service returned ${response.status}`)
@@ -287,7 +289,10 @@ function useWeather(lat: number, lon: number) {
       })
       .then((payload) => {
         const hourly = payload.hourly
-        if (!hourly || !Array.isArray(hourly.time) || !Array.isArray(hourly.wind_speed_10m)) throw new Error('Hourly weather data is not available')
+        const fields = ['time', 'temperature_2m', 'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'precipitation', 'relative_humidity_2m'] as const
+        if (!hourly || fields.some((field) => !Array.isArray(hourly[field]))) throw new Error('Hourly weather data is not available')
+        const sampleCount = hourly.time.length
+        if (fields.some((field) => hourly[field].length !== sampleCount)) throw new Error('Hourly weather variables have inconsistent time ranges')
         const loaded: ForecastHour[] = hourly.time.map((time: string, index: number) => ({
           time,
           temperature: hourly.temperature_2m[index],
@@ -296,7 +301,7 @@ function useWeather(lat: number, lon: number) {
           gusts: hourly.wind_gusts_10m[index],
           precipitation: hourly.precipitation[index],
           humidity: hourly.relative_humidity_2m[index],
-        })).filter((hour: ForecastHour) => Number.isFinite(hour.windSpeed))
+        })).filter((hour: ForecastHour) => typeof hour.time === 'string' && Number.isFinite(Date.parse(hour.time)) && [hour.temperature, hour.windSpeed, hour.windDirectionFrom, hour.gusts, hour.precipitation, hour.humidity].every(Number.isFinite))
         if (!loaded.length) throw new Error('Hourly weather data is empty')
         setHours(loaded)
         setRetrievedAt(new Date().toISOString())
